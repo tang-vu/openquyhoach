@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.whl
+
+# Node
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+.turbo/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Data / artifacts (local dev object store mirror, tile output)
+.data/
+artifacts/
+*.pmtiles
+!fixtures/**/*.pmtiles
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Test artifacts
+playwright-report/
+test-results/
+htmlcov/
+.coverage
+
+# Scratch
+*.log
+tmp/

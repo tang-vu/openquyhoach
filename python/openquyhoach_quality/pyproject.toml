@@ -1,0 +1,18 @@
+[project]
+name = "openquyhoach-quality"
+version = "0.1.0"
+description = "Validation engine: stable rule codes over datasets/layers/features."
+requires-python = ">=3.12"
+dependencies = [
+  "openquyhoach-core",
+  "openquyhoach-geo",
+  "shapely>=2.0",
+  "numpy>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/openquyhoach_quality"]

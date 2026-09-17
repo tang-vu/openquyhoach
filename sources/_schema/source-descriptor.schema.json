@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openquyhoach.local/schema/source-descriptor.schema.json",
+  "title": "OpenQuyHoach source descriptor",
+  "type": "object",
+  "required": ["key", "name", "source_type"],
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$",
+      "description": "namespaced id, e.g. 'ninh-binh/quy-hoach-chung'"
+    },
+    "name": {"type": "string", "minLength": 3},
+    "description": {"type": "string"},
+    "authority": {"type": "string", "description": "issuing authority display name"},
+    "jurisdiction": {"type": "string"},
+    "source_type": {
+      "type": "string",
+      "enum": [
+        "file", "http", "html_index", "arcgis_rest", "ogc_wms", "ogc_wfs",
+        "planning_portal", "document_repository"
+      ]
+    },
+    "base_url": {"type": "string", "description": "https:// or file:// base"},
+    "discovery": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "urls": {"type": "array", "items": {"type": "string"}},
+        "globs": {"type": "array", "items": {"type": "string"}},
+        "path": {"type": "string"},
+        "index_url": {"type": "string"},
+        "link_selector": {"type": "string"},
+        "item_selector": {"type": "string"},
+        "attachment_selector": {"type": "string"},
+        "field_selectors": {"type": "object", "additionalProperties": {"type": "string"}},
+        "page_param": {"type": "string"},
+        "max_pages": {"type": "integer", "minimum": 1, "maximum": 500}
+      }
+    },
+    "parser": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "format_hint": {"type": "string"},
+        "layer_map": {
+          "type": "object",
+          "description": "source layer name -> {canonical_name, thematic_group, geometry_type, required_attributes, no_overlap, no_gaps, no_line_cross}",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "field_map": {"type": "object", "additionalProperties": {"type": "string"}},
+        "default_derivation_level": {
+          "type": "string",
+          "enum": [
+            "official_vector", "official_raster", "official_document",
+            "derived_human_reviewed", "derived_machine_reviewed",
+            "derived_machine_unreviewed", "reference_approximate"
+          ]
+        },
+        "default_dataset_group": {
+          "type": "string",
+          "enum": ["nen_dia_hinh", "hien_trang", "quy_hoach", "moc_gioi", "hoso_gis", "other"]
+        },
+        "crs_override": {"type": "string", "description": "explicit CRS (EPSG code or WKT) — used only when documented; never a guess"}
+      }
+    },
+    "allowed_formats": {"type": "array", "items": {"type": "string"}},
+    "terms_url": {"type": "string"},
+    "rights": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "license": {"type": "string"},
+        "rights_statement": {"type": "string"},
+        "redistribution_status": {
+          "type": "string",
+          "enum": ["allowed", "metadata_only", "restricted", "unknown"]
+        },
+        "attribution": {"type": "string"},
+        "notes": {"type": "string"}
+      }
+    },
+    "crawl_policy": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "delay_seconds": {"type": "number", "minimum": 0},
+        "max_requests": {"type": "integer", "minimum": 1},
+        "respect_robots": {"type": "boolean"},
+        "notes": {"type": "string"}
+      }
+    },
+    "authentication": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "required": {"type": "boolean"},
+        "kind": {"type": "string", "enum": ["none", "api_key", "oauth2", "other"]},
+        "notes": {"type": "string"}
+      }
+    },
+    "planning": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "title": {"type": "string"},
+        "planning_type": {"type": "string"},
+        "scale": {"type": "string"},
+        "decision_number": {"type": "string"},
+        "approval_date": {"type": "string"},
+        "effective_from": {"type": "string"},
+        "approving_authority": {"type": "string"}
+      }
+    },
+    "enabled": {"type": "boolean"},
+    "meta": {"type": "object", "additionalProperties": true}
+  }
+}

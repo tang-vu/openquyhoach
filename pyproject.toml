@@ -1,0 +1,83 @@
+[project]
+name = "openquyhoach"
+version = "0.1.0"
+description = "Open, verifiable planning-data infrastructure for Vietnam."
+requires-python = ">=3.12"
+# Root depends on every workspace package so a bare `uv sync` builds the
+# whole stack (CLI, API, worker, MCP) into .venv.
+dependencies = [
+  "openquyhoach-core",
+  "openquyhoach-geo",
+  "openquyhoach-ingest",
+  "openquyhoach-quality",
+  "openquyhoach-services",
+  "openquyhoach-cli",
+  "openquyhoach-api",
+  "openquyhoach-worker",
+  "openquyhoach-mcp",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=6.0",
+  "ruff>=0.9",
+  "mypy>=1.14",
+  "types-PyYAML",
+  "types-Pillow",
+  "respx>=0.22",
+  "httpx>=0.28",
+]
+
+[tool.uv.workspace]
+members = [
+  "python/openquyhoach_core",
+  "python/openquyhoach_geo",
+  "python/openquyhoach_ingest",
+  "python/openquyhoach_quality",
+  "python/openquyhoach_cli",
+  "python/openquyhoach_mcp",
+  "python/openquyhoach_services",
+  "apps/api",
+  "apps/worker",
+]
+
+[tool.uv.sources]
+openquyhoach-core = { workspace = true }
+openquyhoach-geo = { workspace = true }
+openquyhoach-ingest = { workspace = true }
+openquyhoach-quality = { workspace = true }
+openquyhoach-cli = { workspace = true }
+openquyhoach-api = { workspace = true }
+openquyhoach-worker = { workspace = true }
+openquyhoach-mcp = { workspace = true }
+openquyhoach-services = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "W", "RUF", "C90"]
+ignore = ["E501"]
+mccabe = { max-complexity = 18 }
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["B008"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+disallow_untyped_defs = false
+ignore_missing_imports = true
+exclude = "(node_modules|\\.venv|build|dist|migrations/versions)"
+
+[tool.pytest.ini_options]
+testpaths = ["python", "apps", "tests"]
+markers = [
+  "unit: pure tests, no infrastructure required",
+  "integration: tests requiring live services (PostGIS/MinIO/Redis)",
+  "slow: long-running tests",
+]
+filterwarnings = ["ignore::DeprecationWarning"]

@@ -1,0 +1,24 @@
+[project]
+name = "openquyhoach-cli"
+version = "0.1.0"
+description = "The `openquyhoach` command line interface."
+requires-python = ">=3.12"
+dependencies = [
+  "openquyhoach-core",
+  "openquyhoach-geo",
+  "openquyhoach-ingest",
+  "openquyhoach-quality",
+  "openquyhoach-services",
+  "typer>=0.15",
+  "rich>=13.9",
+]
+
+[project.scripts]
+openquyhoach = "openquyhoach_cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/openquyhoach_cli"]

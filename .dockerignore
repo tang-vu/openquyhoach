@@ -1,0 +1,15 @@
+.git
+.venv
+node_modules
+**/node_modules
+**/.next
+**/dist
+.data
+artifacts
+*.pmtiles
+.pytest_cache
+.mypy_cache
+.ruff_cache
+docs
+tests/e2e
+.env

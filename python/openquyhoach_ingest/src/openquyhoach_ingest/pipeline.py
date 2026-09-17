@@ -1,0 +1,830 @@
+"""Staged ingestion pipeline.
+
+    DISCOVER → FETCH → CONTENT-ADDRESS → DETECT → METADATA → CRS → VALIDATE
+             → NORMALIZE → PROVENANCE → REVIEW-GATE → PUBLISH
+
+Properties:
+
+* idempotent — artifacts dedupe on sha256; a dataset already imported from an
+  artifact is not re-imported; re-runs are cheap.
+* resumable — a failed run can be retried; completed stages are skipped.
+* auditable — every stage emits provenance events with input/output hashes.
+* format-dispatched — vector/raster/pdf/zip handlers are separate functions.
+
+Publishing is a *separate* explicit step (openquyhoach publish) gated by
+review state — ingestion alone never makes data authoritative.
+"""
+
+from __future__ import annotations
+
+import os
+import tempfile
+import uuid
+from datetime import UTC, date, datetime
+from pathlib import Path
+
+from openquyhoach_core.db import session_scope
+from openquyhoach_core.enums import (
+    ArtifactStatus,
+    DerivationLevel,
+    IngestionStatus,
+    ProvenanceOp,
+    ReviewStatus,
+    TaskType,
+)
+from openquyhoach_core.errors import UnsupportedFormatError
+from openquyhoach_core.hashing import sha256_file
+from openquyhoach_core.logging import get_logger
+from openquyhoach_core.models import (
+    Dataset,
+    Document,
+    Feature,
+    IngestionRun,
+    Layer,
+    PlanningRecord,
+    PlanningVersion,
+    ReviewTask,
+    Source,
+    SourceArtifact,
+)
+from openquyhoach_core.provenance import record_event
+from openquyhoach_core.security import safe_extract_zip, sniff_format
+from openquyhoach_core.storage import artifact_key, artifact_store
+from openquyhoach_core.text import vn_normalize
+from openquyhoach_geo.crs import CRSInfo, describe_crs
+from openquyhoach_geo.vector import is_dwg, is_vector_file
+from openquyhoach_geo.vn_gis import normalize_group_name
+from openquyhoach_quality.engine import FeaturePayload, LayerPayload, ValidationContext, run_rules
+from openquyhoach_quality.persist import persist_findings
+from sqlalchemy.orm import Session
+
+from .connectors.base import FetchResult, SourceConfig, get_connector
+from .pdfmeta import inspect_pdf
+from .sources import load_config
+
+log = get_logger(__name__)
+
+VECTOR_FORMATS = {"gpkg", "geojson", "shp", "kml", "dxf", "fgb", "sqlite", "gml", "json"}
+RASTER_FORMATS = {"tiff", "png", "jpeg"}
+DOC_FORMATS = {"pdf"}
+
+TOOL = "openquyhoach-ingest"
+
+
+def _git_commit() -> str | None:
+    return os.environ.get("GIT_COMMIT") or os.environ.get("OQH_COMMIT")
+
+
+# ---------------------------------------------------------------------------
+# Planning record / version resolution
+# ---------------------------------------------------------------------------
+
+
+def _basename(url: str) -> str | None:
+    """Filename from a file:// or https:// URL, ignoring query strings."""
+    from urllib.parse import unquote, urlparse
+
+    name = Path(unquote(urlparse(url).path)).name
+    return name or None
+
+
+def _parse_date(v) -> date | None:
+    if v is None:
+        return None
+    if isinstance(v, date) and not isinstance(v, datetime):
+        return v
+    if isinstance(v, datetime):
+        return v.date()
+    try:
+        return date.fromisoformat(str(v).strip()[:10])
+    except ValueError:
+        return None
+
+
+def resolve_planning_version(
+    session: Session, source_cfg: SourceConfig | None, artifact: SourceArtifact
+) -> PlanningVersion:
+    """Get-or-create the planning record+version this artifact belongs to.
+
+    Driven by the descriptor's `planning:` block. A bare URL/file ingest
+    without a descriptor creates a placeholder record flagged for curation.
+    """
+    planning = (source_cfg.meta.get("planning") if source_cfg else None) or {}
+    title = planning.get("title") or (source_cfg.name if source_cfg else "Unattributed ingest")
+    record = (
+        session.query(PlanningRecord).filter_by(normalized_title=vn_normalize(title)).one_or_none()
+    )
+    if record is None:
+        record = PlanningRecord(
+            title=title,
+            normalized_title=vn_normalize(title),
+            planning_type=planning.get("planning_type"),
+            scale=planning.get("scale"),
+            jurisdiction=source_cfg.jurisdiction if source_cfg else None,
+            approving_authority=planning.get("approving_authority")
+            or (source_cfg.authority if source_cfg else None),
+            official_information_code=planning.get("information_code"),
+            status="active",
+        )
+        session.add(record)
+        session.flush()
+
+    decision = planning.get("decision_number")
+    version = None
+    if decision:
+        version = (
+            session.query(PlanningVersion)
+            .filter_by(planning_record_id=record.id, approval_decision_number=decision)
+            .one_or_none()
+        )
+    if version is None:
+        version = PlanningVersion(
+            planning_record_id=record.id,
+            version_kind="original",
+            version_label=planning.get("version_label"),
+            approval_decision_number=decision,
+            approval_date=_parse_date(planning.get("approval_date")),
+            effective_from=_parse_date(planning.get("effective_from")),
+            legal_status="approved" if decision else "unknown",
+            source_artifact_id=artifact.id,
+            notes="auto-created by ingestion" if not decision else None,
+        )
+        session.add(version)
+        session.flush()
+    return version
+
+
+# ---------------------------------------------------------------------------
+# Format handlers
+# ---------------------------------------------------------------------------
+
+
+def _transform_geom(geom, crs: CRSInfo):
+    """source geom → canonical EPSG:4326. Returns (geom4326, transformed_bool)."""
+    from openquyhoach_geo.crs import CANONICAL_SRID, canonical_transformer
+
+    if not crs.identified or crs.epsg == CANONICAL_SRID:
+        return geom, False
+    transformer = canonical_transformer(crs)
+    return shapely_transform(geom, transformer), True
+
+
+def shapely_transform(geom, transformer):
+    import shapely.ops
+
+    return shapely.ops.transform(transformer.transform, geom)
+
+
+def _ingest_vector(
+    session: Session,
+    artifact: SourceArtifact,
+    path: Path,
+    version: PlanningVersion,
+    source_cfg: SourceConfig | None,
+    run: IngestionRun,
+) -> list[Dataset]:
+    from openquyhoach_geo.geom import ewkb, to_postgis
+    from openquyhoach_geo.vector import iter_features, list_layers
+
+    parser = source_cfg.parser if source_cfg else {}
+    layer_map = parser.get("layer_map") or {}
+    crs_override = parser.get("crs_override")
+    default_level = (
+        parser.get("default_derivation_level") or DerivationLevel.DERIVED_MACHINE_UNREVIEWED.value
+    )
+    datasets: list[Dataset] = []
+    layers_info = list_layers(path)
+
+    for linfo in layers_info:
+        crs = describe_crs(crs_override) if crs_override else linfo.crs
+        lcfg = layer_map.get(linfo.name, {})
+        group = normalize_group_name(lcfg.get("thematic_group") or linfo.name)
+        ds = Dataset(
+            planning_version_id=version.id,
+            dataset_group=lcfg.get("dataset_group") or group,
+            dataset_type="vector",
+            name=linfo.name,
+            original_format="gpkg" if path.suffix == ".gpkg" else path.suffix.lstrip("."),
+            original_crs=crs.to_json(),
+            canonical_crs=4326,
+            derivation_level=lcfg.get("derivation_level") or default_level,
+            review_status=ReviewStatus.PENDING.value,
+            quality_state="unchecked",
+            source_artifact_id=artifact.id,
+        )
+        session.add(ds)
+        session.flush()
+        layer = Layer(
+            dataset_id=ds.id,
+            canonical_name=lcfg.get("canonical_name") or linfo.name.lower().replace(" ", "_"),
+            source_name=linfo.name,
+            title=linfo.name,
+            thematic_group=lcfg.get("thematic_group"),
+            geometry_type=linfo.geometry_type,
+            feature_count=0,
+            styling_metadata=lcfg.get("style") or {},
+        )
+        session.add(layer)
+        session.flush()
+
+        count = 0
+        required = lcfg.get("required_attributes") or []
+        field_map = lcfg.get("field_map") or {}
+        key_field = lcfg.get("key_field")
+        feature_payloads: list[FeaturePayload] = []
+        fid_map: dict[str, uuid.UUID] = {}
+        for vf in iter_features(path, linfo.name):
+            props = dict(vf.properties)
+            stable_id = None
+            # explicit descriptor key wins; the candidate list is a fallback
+            # for foreign data where no descriptor declared a key field
+            if key_field and props.get(key_field) not in (None, ""):
+                stable_id = str(props[key_field])
+            else:
+                for cand in ("OBJECTID", "objectid", "id", "ID", "code", "ma_doi_tuong", "MaDT"):
+                    if cand in props and props[cand] not in (None, ""):
+                        stable_id = str(props[cand])
+                        break
+            key = stable_id or f"{linfo.name}#{vf.fid if vf.fid is not None else count}"
+            geom4326 = None
+            if vf.geometry is not None:
+                try:
+                    geom4326, _transformed = _transform_geom(vf.geometry, crs)
+                except Exception as exc:
+                    geom4326 = None
+                    props["_transform_error"] = str(exc)
+            mapped = {field_map.get(k, k): v for k, v in props.items()}
+            classification = (
+                mapped.get("classification")
+                or mapped.get("land_use")
+                or mapped.get("loai_dat")
+                or mapped.get("ma_loai_dat")
+                or mapped.get("ma_tuyen")
+                or mapped.get("type")
+            )
+            # Features whose geometry can't be canonicalised (unidentified CRS,
+            # transform failure) are validated but not persisted — we never
+            # write geometry whose provenance is a guess.
+            if geom4326 is None:
+                feature_payloads.append(
+                    FeaturePayload(key=key, geometry=vf.geometry, properties=mapped)
+                )
+                continue
+            feature = Feature(
+                layer_id=layer.id,
+                stable_external_id=stable_id,
+                source_object_code=str(mapped.get("code") or stable_id or "") or None,
+                source_object_name=str(mapped.get("name") or mapped.get("ten") or "") or None,
+                normalized_name=vn_normalize(str(mapped.get("name") or mapped.get("ten") or "")),
+                classification=str(classification) if classification else None,
+                geometry=to_postgis(geom4326),
+                source_geometry_ewkb=ewkb(vf.geometry, crs.epsg or 0) if vf.geometry else None,
+                source_srid=crs.epsg,
+                properties=mapped,
+            )
+            session.add(feature)
+            session.flush()
+            fid_map[key] = feature.id
+            feature_payloads.append(
+                FeaturePayload(
+                    key=key,
+                    geometry=geom4326,
+                    properties=mapped,
+                    classification=feature.classification,
+                )
+            )
+            count += 1
+        layer.feature_count = count
+
+        # validation for this layer
+        ctx = ValidationContext(
+            dataset_id=str(ds.id),
+            dataset_group=ds.dataset_group,
+            dataset_type=ds.dataset_type,
+            derivation_level=ds.derivation_level,
+            original_crs=crs.to_json(),
+            artifact_sha256=artifact.content_sha256,
+            artifact_recorded_sha256=artifact.content_sha256,
+            layers=[
+                LayerPayload(
+                    name=linfo.name,
+                    geometry_type=linfo.geometry_type,
+                    expected_geometry_type=lcfg.get("geometry_type"),
+                    features=feature_payloads,
+                )
+            ],
+            required_attributes={linfo.name: required},
+            planning_version={
+                "approval_date": version.approval_date,
+                "effective_from": version.effective_from,
+                "effective_to": version.effective_to,
+                "approval_decision_number": version.approval_decision_number,
+            },
+            meta={
+                "authority": (source_cfg.authority if source_cfg else None),
+                "has_provenance": True,
+                "topology": {
+                    linfo.name: {
+                        "no_overlap": bool(lcfg.get("no_overlap")),
+                        "no_gaps": bool(lcfg.get("no_gaps")),
+                        "no_line_cross": bool(lcfg.get("no_line_cross")),
+                    }
+                },
+            },
+        )
+        findings = run_rules(ctx)
+        persist_findings(
+            session,
+            findings,
+            dataset_id=ds.id,
+            run_id=run.id,
+            feature_id_map=fid_map,
+            layer_id_map={linfo.name: layer.id},
+        )
+        run.warning_count += sum(1 for f in findings if f.severity in ("warning", "info"))
+        if any(f.severity in ("error", "critical") for f in findings):
+            ds.quality_state = "errors"
+
+        record_event(
+            session,
+            entity_type="dataset",
+            entity_id=ds.id,
+            operation=ProvenanceOp.IMPORTED,
+            input_refs=[
+                {
+                    "entity_type": "artifact",
+                    "entity_id": str(artifact.id),
+                    "sha256": artifact.content_sha256,
+                }
+            ],
+            tool=TOOL,
+            tool_version="0.1.0",
+            parameters={
+                "layer": linfo.name,
+                "crs_epsg": crs.epsg,
+                "crs_identified": crs.identified,
+            },
+            run_id=run.id,
+        )
+        datasets.append(ds)
+    return datasets
+
+
+def _ingest_raster(
+    session: Session,
+    artifact: SourceArtifact,
+    path: Path,
+    version: PlanningVersion,
+    source_cfg: SourceConfig | None,
+    run: IngestionRun,
+) -> Dataset:
+    from openquyhoach_geo.raster import inspect_raster
+
+    info = inspect_raster(path)
+    parser = source_cfg.parser if source_cfg else {}
+    level = parser.get("default_derivation_level") or (
+        DerivationLevel.OFFICIAL_RASTER.value
+        if info.georeferenced
+        else DerivationLevel.DERIVED_MACHINE_UNREVIEWED.value
+    )
+    ds = Dataset(
+        planning_version_id=version.id,
+        dataset_group=normalize_group_name(
+            (source_cfg.parser.get("default_dataset_group") if source_cfg else None) or "HoSoScan"
+        )
+        if parser.get("default_dataset_group") != "other"
+        else "hoso_gis",
+        dataset_type="raster",
+        name=artifact.filename,
+        original_format=info.driver,
+        original_crs=info.crs.to_json(),
+        derivation_level=level,
+        review_status=ReviewStatus.PENDING.value,
+        quality_state="unchecked",
+        source_artifact_id=artifact.id,
+        meta={"raster": info.to_json()},
+    )
+    session.add(ds)
+    session.flush()
+    ctx = ValidationContext(
+        dataset_id=str(ds.id),
+        dataset_group=ds.dataset_group,
+        dataset_type="raster",
+        derivation_level=ds.derivation_level,
+        original_crs=info.crs.to_json(),
+        meta={"authority": source_cfg.authority if source_cfg else None, "has_provenance": True},
+    )
+    findings = run_rules(ctx)
+    persist_findings(session, findings, dataset_id=ds.id, run_id=run.id)
+    if not info.georeferenced:
+        session.add(
+            ReviewTask(
+                target_type="dataset",
+                target_id=ds.id,
+                task_type=TaskType.REVIEW_GEOREFERENCE.value,
+                priority=50,
+                reason="raster is not georeferenced — create a GeoreferenceJob",
+                evidence={"raster": {"width": info.width, "height": info.height}},
+            )
+        )
+    record_event(
+        session,
+        entity_type="dataset",
+        entity_id=ds.id,
+        operation=ProvenanceOp.IMPORTED,
+        input_refs=[
+            {
+                "entity_type": "artifact",
+                "entity_id": str(artifact.id),
+                "sha256": artifact.content_sha256,
+            }
+        ],
+        tool=TOOL,
+        tool_version="0.1.0",
+        parameters={"driver": info.driver, "georeferenced": info.georeferenced},
+        run_id=run.id,
+    )
+    return ds
+
+
+def _ingest_pdf(
+    session: Session,
+    artifact: SourceArtifact,
+    path: Path,
+    version: PlanningVersion,
+    source_cfg: SourceConfig | None,
+    run: IngestionRun,
+) -> Document:
+    info = inspect_pdf(path)
+    doc = Document(
+        planning_version_id=version.id,
+        artifact_id=artifact.id,
+        document_type="approval_decision"
+        if info.candidate_codes.get("decision_number")
+        else "document",
+        # candidates only — reviewer confirms; never inferred from filename
+        document_number=info.candidate_codes.get("decision_number"),
+        title=info.metadata.get("Title") or artifact.filename,
+        normalized_title=vn_normalize(info.metadata.get("Title") or artifact.filename or ""),
+        signed_date=_parse_date(info.candidate_codes.get("signed_date")),
+        issuing_authority=source_cfg.authority if source_cfg else None,
+        page_count=info.page_count,
+        meta={
+            "pdf_metadata": info.metadata,
+            "pages": [vars(p) for p in info.pages[:200]],
+            "has_embedded_text": info.has_embedded_text,
+            "needs_ocr": info.needs_ocr,
+            "candidate_codes": info.candidate_codes,
+        },
+    )
+    session.add(doc)
+    session.flush()
+    record_event(
+        session,
+        entity_type="document",
+        entity_id=doc.id,
+        operation=ProvenanceOp.EXTRACTED,
+        input_refs=[
+            {
+                "entity_type": "artifact",
+                "entity_id": str(artifact.id),
+                "sha256": artifact.content_sha256,
+            }
+        ],
+        tool="pypdf",
+        run_id=run.id,
+        parameters={"pages": info.page_count, "embedded_text": info.has_embedded_text},
+    )
+    if info.needs_ocr:
+        session.add(
+            ReviewTask(
+                target_type="artifact",
+                target_id=artifact.id,
+                task_type=TaskType.VERIFY_METADATA.value,
+                priority=60,
+                reason="PDF has no embedded text — OCR is an optional assisted step",
+                evidence={"page_count": info.page_count},
+            )
+        )
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# Artifact staging
+# ---------------------------------------------------------------------------
+
+
+def stage_artifact(
+    session: Session,
+    fetch: FetchResultLike,
+    source: Source | None,
+    source_cfg: SourceConfig | None,
+    run: IngestionRun,
+) -> dict:
+    """Content-address → store → detect → dispatch. Returns a stage report."""
+    report: dict = {"artifact_id": None, "datasets": [], "documents": [], "skipped": False}
+
+    existing = None
+    if fetch.sha256:
+        existing = (
+            session.query(SourceArtifact).filter_by(content_sha256=fetch.sha256).one_or_none()
+        )
+    if existing is not None:
+        report["skipped"] = True
+        report["artifact_id"] = str(existing.id)
+        record_event(
+            session,
+            entity_type="artifact",
+            entity_id=existing.id,
+            operation="unchanged",
+            parameters={"reason": "content_sha256 already present"},
+            run_id=run.id,
+        )
+        return report
+
+    head = fetch.local_path.read_bytes()[:512]
+    detected = sniff_format(head, fetch.local_path.name)
+    key = artifact_key(fetch.sha256, fetch.local_path.name)
+    with open(fetch.local_path, "rb") as fh:
+        artifact_store().put(key, fh, content_type=fetch.mime_type)
+
+    artifact = SourceArtifact(
+        source_id=source.id if source else None,
+        canonical_url=fetch.canonical_url,
+        retrieved_url=fetch.retrieved_url,
+        content_sha256=fetch.sha256,
+        mime_type=fetch.mime_type,
+        file_size=fetch.size,
+        etag=fetch.etag,
+        last_modified=fetch.last_modified,
+        object_storage_key=key,
+        filename=getattr(fetch, "filename", None)
+        or _basename(fetch.canonical_url)
+        or fetch.local_path.name,
+        detected_format=detected,
+        status=ArtifactStatus.DOWNLOADED.value,
+        meta={"discovered_metadata": getattr(fetch, "metadata", {}) or {}},
+    )
+    session.add(artifact)
+    session.flush()
+    report["artifact_id"] = str(artifact.id)
+    record_event(
+        session,
+        entity_type="artifact",
+        entity_id=artifact.id,
+        operation=ProvenanceOp.DOWNLOADED,
+        input_refs=[{"url": fetch.canonical_url}],
+        tool=TOOL,
+        output_hash=fetch.sha256,
+        run_id=run.id,
+        parameters={"size": fetch.size, "detected_format": detected},
+    )
+
+    version = resolve_planning_version(session, source_cfg, artifact)
+
+    def _dispatch(p: Path, artifact_row: SourceArtifact = artifact):
+        fmt = sniff_format(p.read_bytes()[:512], p.name)
+        if fmt == "zip":
+            dest = Path(tempfile.mkdtemp(prefix="oqh-zip-"))
+            for member in safe_extract_zip(p, dest):
+                _dispatch(member, artifact_row)
+            return
+        if is_dwg(p):
+            record_event(
+                session,
+                entity_type="artifact",
+                entity_id=artifact_row.id,
+                operation="rejected",
+                run_id=run.id,
+                parameters={"reason": "dwg_unsupported_convert_to_dxf_or_gpkg"},
+            )
+            session.add(
+                ReviewTask(
+                    target_type="artifact",
+                    target_id=artifact_row.id,
+                    task_type=TaskType.CURATE_SOURCE.value,
+                    priority=80,
+                    reason="DWG file detected — convert to DXF/GeoPackage before ingest",
+                )
+            )
+            return
+        if fmt in VECTOR_FORMATS or is_vector_file(p):
+            try:
+                datasets = _ingest_vector(session, artifact_row, p, version, source_cfg, run)
+                report["datasets"].extend(str(d.id) for d in datasets)
+                run.imported_count += len(datasets)
+            except UnsupportedFormatError as exc:
+                record_event(
+                    session,
+                    entity_type="artifact",
+                    entity_id=artifact_row.id,
+                    operation="rejected",
+                    run_id=run.id,
+                    parameters={"reason": str(exc)},
+                )
+                run.rejected_count += 1
+            return
+        if fmt in RASTER_FORMATS:
+            ds = _ingest_raster(session, artifact_row, p, version, source_cfg, run)
+            report["datasets"].append(str(ds.id))
+            run.imported_count += 1
+            return
+        if fmt in DOC_FORMATS:
+            doc = _ingest_pdf(session, artifact_row, p, version, source_cfg, run)
+            report["documents"].append(str(doc.id))
+            return
+        record_event(
+            session,
+            entity_type="artifact",
+            entity_id=artifact_row.id,
+            operation="skipped",
+            run_id=run.id,
+            parameters={"reason": f"unhandled format {fmt}"},
+        )
+
+    _dispatch(fetch.local_path)
+    artifact.status = ArtifactStatus.IMPORTED.value
+    return report
+
+
+# ---------------------------------------------------------------------------
+# Entry points
+# ---------------------------------------------------------------------------
+
+
+def _source_row(session: Session, source_key: str | None) -> Source | None:
+    if not source_key:
+        return None
+    return session.query(Source).filter_by(source_key=source_key).one_or_none()
+
+
+def ingest_source(
+    source_key: str,
+    *,
+    dry_run: bool = False,
+    limit: int | None = None,
+    workdir: Path | None = None,
+) -> uuid.UUID:
+    """Full pipeline for one registered source."""
+    cfg = load_config(source_key)
+    if not cfg.enabled:
+        from openquyhoach_core.errors import SourceDisabledError
+
+        raise SourceDisabledError(f"source {source_key} is disabled")
+    connector = get_connector(cfg.source_type)
+    wd = workdir or Path(tempfile.mkdtemp(prefix="oqh-ingest-"))
+
+    with session_scope() as session:
+        source = _source_row(session, source_key)
+        run = IngestionRun(
+            source_id=source.id if source else None,
+            trigger="cli",
+            software_commit=_git_commit(),
+            status=IngestionStatus.RUNNING.value,
+            meta={"dry_run": dry_run},
+        )
+        session.add(run)
+        session.flush()
+        try:
+            items = list(connector.discover(cfg))
+            run.discovered_count = len(items)
+            for item in items[: limit or None]:
+                if dry_run:
+                    continue
+                fetch = connector.fetch(cfg, item, wd)
+                if getattr(fetch, "not_modified", False):
+                    continue
+                # local_path may be an extension-less tempfile — carry the
+                # discovered filename through so artifacts keep real names
+                fetch.filename = item.suggested_filename or _basename(item.url)
+                run.downloaded_count += 1
+                stage_artifact(session, fetch, source, cfg, run)
+            run.status = IngestionStatus.SUCCEEDED.value
+        except Exception as exc:
+            run.status = IngestionStatus.FAILED.value
+            run.error_summary = str(exc)[:4000]
+            log.exception("ingest.failed", source=source_key)
+            raise
+        finally:
+            run.completed_at = datetime.now(UTC)
+        return run.id
+
+
+def ingest_path(
+    path: str | Path,
+    *,
+    source_key: str | None = None,
+    planning: dict | None = None,
+    dry_run: bool = False,
+) -> uuid.UUID:
+    """Ad-hoc single-file ingest (community imports, tests)."""
+    cfg = load_config(source_key) if source_key else None
+    if planning:
+        cfg = cfg or SourceConfig(key="adhoc", name="adhoc", source_type="file")
+        cfg.meta["planning"] = planning
+    p = Path(path).resolve()
+    with session_scope() as session:
+        source = _source_row(session, source_key)
+        run = IngestionRun(
+            source_id=source.id if source else None,
+            trigger="cli",
+            software_commit=_git_commit(),
+            status=IngestionStatus.RUNNING.value,
+            meta={"dry_run": dry_run, "path": str(p)},
+        )
+        session.add(run)
+        session.flush()
+        try:
+            sha, size = sha256_file(p)
+            fetch = _LocalFetch(p, p.as_uri(), sha, size)
+            run.discovered_count = 1
+            if not dry_run:
+                stage_artifact(session, fetch, source, cfg, run)
+                run.downloaded_count = 1
+            run.status = IngestionStatus.SUCCEEDED.value
+        except Exception as exc:
+            run.status = IngestionStatus.FAILED.value
+            run.error_summary = str(exc)[:4000]
+            raise
+        finally:
+            run.completed_at = datetime.now(UTC)
+        return run.id
+
+
+def ingest_url(
+    url: str,
+    *,
+    source_key: str | None = None,
+    planning: dict | None = None,
+    dry_run: bool = False,
+) -> uuid.UUID:
+    """Ad-hoc URL ingest through the HTTP machinery (SSRF-guarded)."""
+    from .http_client import fetch_url
+
+    cfg = load_config(source_key) if source_key else None
+    if planning:
+        cfg = cfg or SourceConfig(key="adhoc", name="adhoc", source_type="http")
+        cfg.meta["planning"] = planning
+    with session_scope() as session:
+        source = _source_row(session, source_key)
+        run = IngestionRun(
+            source_id=source.id if source else None,
+            trigger="cli",
+            software_commit=_git_commit(),
+            status=IngestionStatus.RUNNING.value,
+            meta={"dry_run": dry_run, "url": url},
+        )
+        session.add(run)
+        session.flush()
+        try:
+            if not dry_run:
+                wd = Path(tempfile.mkdtemp(prefix="oqh-url-"))
+                res = fetch_url(url, wd)
+                fetch = _LocalFetch(
+                    res["local_path"],
+                    url,
+                    res["sha256"],
+                    res["size"],
+                    mime=res.get("mime_type"),
+                    etag=res.get("etag"),
+                    last_modified=res.get("last_modified"),
+                )
+                run.downloaded_count = 1
+                stage_artifact(session, fetch, source, cfg, run)
+            run.discovered_count = 1
+            run.status = IngestionStatus.SUCCEEDED.value
+        except Exception as exc:
+            run.status = IngestionStatus.FAILED.value
+            run.error_summary = str(exc)[:4000]
+            raise
+        finally:
+            run.completed_at = datetime.now(UTC)
+        return run.id
+
+
+class _LocalFetch:
+    """Minimal FetchResult-compatible wrapper for local paths/URL results."""
+
+    def __init__(
+        self,
+        path: Path,
+        url: str,
+        sha: str,
+        size: int,
+        mime: str | None = None,
+        etag=None,
+        last_modified=None,
+    ):
+        self.local_path = path
+        self.canonical_url = url
+        self.retrieved_url = url
+        self.sha256 = sha
+        self.size = size
+        self.mime_type = mime
+        self.etag = etag
+        self.last_modified = last_modified
+        self.filename = _basename(url) or path.name
+        self.metadata: dict = {}
+
+
+FetchResultLike = _LocalFetch | FetchResult

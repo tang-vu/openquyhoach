@@ -1,0 +1,22 @@
+[project]
+name = "openquyhoach-geo"
+version = "0.1.0"
+description = "Geospatial primitives for OpenQuyHoach: CRS policy, transforms, PMTiles, COG."
+requires-python = ">=3.12"
+dependencies = [
+  "openquyhoach-core",
+  "shapely>=2.0",
+  "pyproj>=3.7",
+  "numpy>=2.0",
+  "mercantile>=1.2",
+  "rasterio>=1.4",
+  "pyogrio>=0.10",
+  "rio-tiler>=7.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/openquyhoach_geo"]
