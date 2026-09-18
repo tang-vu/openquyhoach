@@ -19,7 +19,7 @@ const LAYER_COLORS: Record<string, string> = {
 
 /** Vector tiles for one published version; the MVT carries `layer` attr
  * per feature so a single source can expose multiple paint layers. */
-function addPublicationSource(map: MLMap, pubId: string, label: string) {
+function addPublicationSource(map: MLMap, pubId: string, variant: "main" | "cmp") {
   const srcId = `pub-${pubId}`;
   if (map.getSource(srcId)) return;
   map.addSource(srcId, {
@@ -28,15 +28,15 @@ function addPublicationSource(map: MLMap, pubId: string, label: string) {
     minzoom: 0,
     maxzoom: 14,
   });
+  const opacity = variant === "cmp" ? 0.2 : 0.35;
   for (const [canonical, color] of Object.entries(LAYER_COLORS)) {
-    const fillId = `${srcId}-${canonical}-fill`;
     map.addLayer({
-      id: fillId,
+      id: `${srcId}-${canonical}-fill`,
       type: "fill",
       source: srcId,
       "source-layer": "planning",
       filter: ["==", ["get", "layer"], canonical],
-      paint: { "fill-color": color, "fill-opacity": 0.35 },
+      paint: { "fill-color": color, "fill-opacity": opacity },
     });
     map.addLayer({
       id: `${srcId}-${canonical}-line`,
@@ -44,20 +44,56 @@ function addPublicationSource(map: MLMap, pubId: string, label: string) {
       source: srcId,
       "source-layer": "planning",
       filter: ["==", ["get", "layer"], canonical],
-      paint: { "line-color": color, "line-width": 1.6 },
+      paint: {
+        "line-color": color,
+        "line-width": 1.6,
+        ...(variant === "cmp" ? { "line-dasharray": [2, 2] } : {}),
+      },
     });
-    void label;
   }
+}
+
+/** Remove all pub-* sources and their layers (keeps the map in sync with
+ * the selected version). */
+function clearPublicationSources(map: MLMap) {
+  for (const lyr of [...map.getStyle().layers ?? []]) {
+    if (lyr.id.startsWith("pub-")) map.removeLayer(lyr.id);
+  }
+  for (const [id] of Object.entries(map.getStyle().sources ?? {})) {
+    if (id.startsWith("pub-")) map.removeSource(id);
+  }
+}
+
+const RASTER_SRC = "raster-overlay";
+const RASTER_LYR = "raster-overlay-lyr";
+
+function setRasterOverlay(map: MLMap, datasetId: string | null) {
+  if (map.getLayer(RASTER_LYR)) map.removeLayer(RASTER_LYR);
+  if (map.getSource(RASTER_SRC)) map.removeSource(RASTER_SRC);
+  if (!datasetId) return;
+  map.addSource(RASTER_SRC, {
+    type: "raster",
+    tiles: [api.rasterTilesUrl(datasetId)],
+    tileSize: 256,
+  });
+  map.addLayer({
+    id: RASTER_LYR,
+    type: "raster",
+    source: RASTER_SRC,
+    paint: { "raster-opacity": 0.7 },
+  });
 }
 
 export default function MapView({
   publicationId,
   comparePublicationId,
+  rasterDatasetId,
   onSelect,
   focusBbox,
 }: {
   publicationId: string | null;
   comparePublicationId: string | null;
+  rasterDatasetId: string | null;
   onSelect: (sel: MapSelection) => void;
   focusBbox: number[] | null;
 }) {
@@ -102,19 +138,24 @@ export default function MapView({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !publicationId) return;
-    const attach = () => addPublicationSource(map, publicationId, "v1");
+    if (!map) return;
+    const attach = () => {
+      clearPublicationSources(map);
+      if (publicationId) addPublicationSource(map, publicationId, "main");
+      if (comparePublicationId)
+        addPublicationSource(map, comparePublicationId, "cmp");
+    };
     if (map.isStyleLoaded()) attach();
     else map.once("load", attach);
-  }, [publicationId]);
+  }, [publicationId, comparePublicationId]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !comparePublicationId) return;
-    const attach = () => addPublicationSource(map, comparePublicationId, "v2");
-    if (map.isStyleLoaded()) attach();
-    else map.once("load", attach);
-  }, [comparePublicationId]);
+    if (!map) return;
+    const apply = () => setRasterOverlay(map, rasterDatasetId);
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [rasterDatasetId]);
 
   useEffect(() => {
     const map = mapRef.current;

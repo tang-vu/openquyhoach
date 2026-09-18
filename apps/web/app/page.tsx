@@ -6,6 +6,7 @@ import SearchBox from "@/components/SearchBox";
 import ProvenanceDrawer from "@/components/ProvenanceDrawer";
 import ComparePanel from "@/components/ComparePanel";
 import AdminPanel from "@/components/AdminPanel";
+import VersionDetail from "@/components/VersionDetail";
 import {
   api,
   type PlanningRecord,
@@ -25,6 +26,7 @@ export default function Page() {
   const [versionId, setVersionId] = useState<string | null>(null);
   const [pubId, setPubId] = useState<string | null>(null);
   const [comparePubId, setComparePubId] = useState<string | null>(null);
+  const [rasterId, setRasterId] = useState<string | null>(null);
   const [bbox, setBbox] = useState<number[] | null>(null);
   const [sel, setSel] = useState<MapSelection | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -57,6 +59,7 @@ export default function Page() {
     if (!versionId) return;
     const pub = pubs.find((p) => p.planning_version_id === versionId);
     setPubId(pub?.id ?? null);
+    setRasterId(null);
     api
       .versionExtent(versionId)
       .then((e) => setBbox(e.bbox))
@@ -132,6 +135,13 @@ export default function Page() {
                     </div>
                   </div>
                 ))}
+                {versionId && (
+                  <VersionDetail
+                    versionId={versionId}
+                    rasterOn={rasterId}
+                    onRasterToggle={setRasterId}
+                  />
+                )}
               </>
             )}
           </div>
@@ -147,6 +157,7 @@ export default function Page() {
       <MapView
         publicationId={pubId}
         comparePublicationId={comparePubId}
+        rasterDatasetId={rasterId}
         onSelect={setSel}
         focusBbox={bbox}
       />

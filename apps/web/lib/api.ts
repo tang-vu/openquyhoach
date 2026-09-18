@@ -104,6 +104,19 @@ export interface Changeset {
   entries: ChangesetEntry[];
 }
 
+export interface DocumentInfo {
+  id: string;
+  document_type: string | null;
+  document_number: string | null;
+  title: string | null;
+  signed_date: string | null;
+  issuing_authority: string | null;
+  page_count: number | null;
+  artifact_id: string | null;
+  planning_version_id: string;
+  candidate_codes?: unknown;
+}
+
 export interface ReviewTask {
   id: string;
   target_type: string;
@@ -156,10 +169,26 @@ export const api = {
   compare: (fromLayer: string, toLayer: string) =>
     get<Changeset>("/v1/compare", { from_layer: fromLayer, to_layer: toLayer }),
   dataset: (id: string) => get<DatasetInfo>(`/v1/datasets/${id}`),
-  versionDetail: (versionId: string) =>
-    get<PlanningVersion & { datasets: DatasetInfo[] }>(
-      `/v1/planning-versions/${versionId}`,
+  documents: (versionId?: string) =>
+    get<{ items: DocumentInfo[] }>(
+      "/v1/documents",
+      versionId ? { version_id: versionId } : undefined,
     ),
+  documentDownloadUrl: (docId: string) =>
+    `${API}/v1/documents/${docId}/download`,
+  versionDetail: (versionId: string) =>
+    get<
+      PlanningVersion & {
+        datasets: DatasetInfo[];
+        documents: DocumentInfo[];
+        publications: {
+          id: string;
+          status: string;
+          published_at: string | null;
+          checksum_sha256: string | null;
+        }[];
+      }
+    >(`/v1/planning-versions/${versionId}`),
   recordDetail: (recordId: string) =>
     get<PlanningRecord & { versions: PlanningVersion[] }>(
       `/v1/planning-records/${recordId}`,

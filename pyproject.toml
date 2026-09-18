@@ -68,6 +68,7 @@ mccabe = { max-complexity = 18 }
 
 [tool.mypy]
 python_version = "3.12"
+explicit_package_bases = true
 strict = false
 disallow_untyped_defs = false
 ignore_missing_imports = true

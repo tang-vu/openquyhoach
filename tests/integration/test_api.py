@@ -140,6 +140,68 @@ class TestCompareApi:
         assert body["summary"]["added"] == 1
 
 
+class TestDocuments:
+    def _doc_ids(self):
+        from openquyhoach_core.db import session_scope
+        from openquyhoach_core.models import Document
+
+        with session_scope() as s:
+            return {d.id: d for d in s.scalars(select(Document))}
+
+    def test_list_documents(self, seeded_api):
+        r = seeded_api["api"].get("/v1/documents")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["total"] >= 1
+        item = body["items"][0]
+        assert {"id", "document_type", "document_number", "artifact_id"} <= set(item)
+
+    def test_list_documents_version_filter(self, seeded_api):
+        api = seeded_api["api"]
+        docs = self._doc_ids()
+        vid = next(iter(docs.values())).planning_version_id
+        r = api.get("/v1/documents", params={"version_id": str(vid)})
+        assert r.status_code == 200
+        items = r.json()["items"]
+        assert items and all(d["planning_version_id"] == str(vid) for d in items)
+        r = api.get("/v1/documents", params={"version_id": str(seeded_api["versions"]["v1"])})
+        assert r.json()["total"] == 0
+
+    def test_document_detail_has_artifact(self, seeded_api):
+        api = seeded_api["api"]
+        doc_id = next(iter(self._doc_ids()))
+        r = api.get(f"/v1/documents/{doc_id}")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["id"] == str(doc_id)
+        assert body["artifact"]["sha256"]
+
+    def test_document_download_streams_bytes(self, seeded_api):
+        """LocalStore presigns as file:// → endpoint streams raw bytes."""
+        import hashlib
+
+        api = seeded_api["api"]
+        docs = self._doc_ids()
+        doc = next(d for d in docs.values() if d.artifact_id)
+        from openquyhoach_core.db import session_scope
+        from openquyhoach_core.models import SourceArtifact
+
+        with session_scope() as s:
+            a = s.get(SourceArtifact, doc.artifact_id)
+            sha, fname = a.content_sha256, a.filename
+        r = api.get(f"/v1/documents/{doc.id}/download")
+        assert r.status_code == 200, r.text
+        assert hashlib.sha256(r.content).hexdigest() == sha
+        assert fname in r.headers["content-disposition"]
+
+    def test_document_404s(self, api):
+        import uuid
+
+        missing = uuid.uuid4()
+        assert api.get(f"/v1/documents/{missing}").status_code == 404
+        assert api.get(f"/v1/documents/{missing}/download").status_code == 404
+
+
 class TestAdminGuard:
     def test_mutating_requires_key(self, seeded_api):
         api = seeded_api["api"]

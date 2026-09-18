@@ -20,6 +20,13 @@ run in this repo.
 
 ## What shipped vs plan
 
+- Document access (V1.1): `GET /v1/documents` (paged, `version_id` +
+  `document_type` filters), `GET /v1/documents/{id}` (metadata + artifact),
+  `GET /v1/documents/{id}/download` — 302 to presigned URL on S3/MinIO,
+  direct byte stream on filesystem-backed stores. Version detail now embeds
+  `documents` and `publications`; web `VersionDetail` shows datasets,
+  official documents with download links, publication manifests, and a
+  raster-overlay toggle wired to `MapView`.
 - Web UI is a **static export** (not the spec'd SSR + TanStack Query) —
   simpler to host, still fully functional. No Playwright e2e yet.
 - Admin is a tab in the web app (dev-token `X-Admin-Key`), not a separate

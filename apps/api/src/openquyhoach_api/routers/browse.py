@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import RedirectResponse, Response
 from geoalchemy2.shape import to_shape
 from openquyhoach_core.db import session_scope
 from openquyhoach_core.models import (
@@ -15,9 +16,11 @@ from openquyhoach_core.models import (
     Layer,
     PlanningRecord,
     PlanningVersion,
+    Publication,
     QualityObservation,
     SourceArtifact,
 )
+from openquyhoach_core.storage import artifact_store
 from openquyhoach_core.text import vn_normalize
 from sqlalchemy import func, select
 
@@ -85,8 +88,6 @@ def get_version(version_id: uuid.UUID):
         out["documents"] = [
             document_out(d) for d in s.query(Document).filter_by(planning_version_id=v.id).all()
         ]
-        from openquyhoach_core.models import Publication
-
         out["publications"] = [
             {
                 "id": str(p.id),
@@ -174,6 +175,73 @@ def dataset_features(
                 for f, lname in rows
             ],
         }
+
+
+@router.get("/documents")
+def list_documents(
+    page: PageDep,
+    version_id: uuid.UUID | None = None,
+    document_type: str | None = None,
+):
+    with session_scope() as s:
+        qy = s.query(Document)
+        if version_id:
+            qy = qy.filter(Document.planning_version_id == version_id)
+        if document_type:
+            qy = qy.filter(Document.document_type == document_type)
+        total = qy.count()
+        rows = (
+            qy.order_by(Document.signed_date.nulls_last(), Document.document_number)
+            .offset(page.offset)
+            .limit(page.limit)
+            .all()
+        )
+        return {"total": total, "items": [document_out(d) for d in rows]}
+
+
+@router.get("/documents/{doc_id}")
+def get_document(doc_id: uuid.UUID):
+    with session_scope() as s:
+        d = s.get(Document, doc_id)
+        if d is None:
+            raise HTTPException(404, "document not found")
+        out = document_out(d)
+        if d.artifact_id:
+            a = s.get(SourceArtifact, d.artifact_id)
+            out["artifact"] = artifact_out(a) if a else None
+        return out
+
+
+@router.get("/documents/{doc_id}/download")
+def download_document(doc_id: uuid.UUID):
+    """Redirect to a presigned object URL, or stream bytes when the store
+    is filesystem-backed (local dev/tests)."""
+    with session_scope() as s:
+        d = s.get(Document, doc_id)
+        if d is None or d.artifact_id is None:
+            raise HTTPException(404, "document not found")
+        a = s.get(SourceArtifact, d.artifact_id)
+        if a is None:
+            raise HTTPException(404, "artifact missing")
+        key, filename, mime = a.object_storage_key, a.filename, a.mime_type
+    if key is None:
+        raise HTTPException(404, "artifact not stored")
+
+    store = artifact_store()
+    url = store.presigned_url(key)
+    if url.startswith(("http://", "https://")):
+        return RedirectResponse(url, status_code=302)
+    # filesystem store: stream the artifact directly
+    try:
+        data = store.get(key)
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(404, "artifact object missing") from exc
+    headers = {"Content-Disposition": f'attachment; filename="{filename or "document"}"'}
+    return Response(
+        data,
+        media_type=mime or "application/octet-stream",
+        headers=headers,
+    )
 
 
 @router.get("/admin-units")
