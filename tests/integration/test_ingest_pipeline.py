@@ -113,6 +113,38 @@ class TestDocumentIngest:
         assert "001/QD-UBND-MX" in numbers
         assert all(d.page_count and d.page_count >= 1 for d in docs)
 
+    def test_machine_extracted_docs_marked_derived(self, descriptor_env):
+        """Machine-extracted fields weaken document origin and open review.
+
+        The demo descriptor does not state a decision number, so the value
+        parsed out of the PDF text is DERIVED_MACHINE — the document origin
+        must reflect the weakest origin used and a review task must exist.
+        """
+        _ingest("demo/demo-district-docs")
+
+        from openquyhoach_core.db import session_scope
+        from openquyhoach_core.models import Document, ReviewTask
+
+        with session_scope() as s:
+            docs = s.scalars(select(Document)).all()
+            extracted = [d for d in docs if d.document_number]
+            assert extracted
+            for doc in extracted:
+                assert doc.metadata_origin == "derived_machine"
+                origins = (doc.meta or {}).get("field_origins") or {}
+                assert origins.get("document_number") == "derived_machine"
+                cands = (doc.meta or {}).get("candidates") or {}
+                assert "decision_number" in cands
+                assert cands["decision_number"]["page"] >= 1
+                assert cands["decision_number"]["snippet"]
+
+            doc_ids = {d.id for d in extracted}
+            tasks = s.scalars(
+                select(ReviewTask).where(ReviewTask.target_type == "document")
+            ).all()
+            assert any(t.target_id in doc_ids for t in tasks)
+            assert all(t.status == "pending" for t in tasks)
+
 
 class TestRasterIngest:
     def test_cog_registered_unreviewed(self, descriptor_env):
