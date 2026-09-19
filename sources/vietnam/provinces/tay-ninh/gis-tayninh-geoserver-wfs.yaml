@@ -1,0 +1,56 @@
+key: vietnam/provinces/tay-ninh/gis-tayninh-geoserver-wfs
+name: "Cổng GIS tỉnh Tây Ninh — quy hoạch sử dụng đất & chuyên ngành (WFS)"
+description: >
+  Public GeoServer WFS on the provincial government GIS portal
+  (gis.tayninh.gov.vn). Exposes quy hoạch sử dụng đất cấp tỉnh, district
+  QHSDD layers (including Long An districts — the server hosts pre-merger
+  Long An data), sector plans (transport, water supply, industrial
+  clusters, environment), plan-boundary layers, and administrative
+  boundaries. Layer names are matched against include/exclude regexes;
+  only quy hoạch / boundary layers are harvested — hiện trạng
+  (existing-conditions), business, and basemap layers are excluded.
+authority: "UBND tỉnh Tây Ninh — Cổng GIS tỉnh"
+jurisdiction: "Tỉnh Tây Ninh"
+admin_codes:
+  province: "72"
+source_type: ogc_wfs
+base_url: "https://gis.tayninh.gov.vn/geoserver/ows"
+homepage: "https://gis.tayninh.gov.vn/"
+planning_types: [quy_hoach_su_dung_dat, quy_hoach_chuyen_nganh, quy_hoach_phan_khu]
+priority: 25
+discovery:
+  include: "(?i)QuyHoach|qhsdd|PhamViQuyHoach|RanhGioi|ranhgioi|DiaGioi|^quyhoach:"
+  exclude: "(?i)HienTrang|hientrang|doanhnghiep|hokinhdoanh|_HT_|_ht_|Anno|exporthokinhdoanh|DDSH|ChatLuong|ThoNhuong|ThoaiHoa|TiemNang|BienDoi|DanCu|Truong|BenhVien|CuaKhau|BenXe|DiaChi|DuLich|NghienCuu|TapHuan"
+  max_features: 8000          # per-typename GetFeature cap
+  max_resources: 80
+allowed_formats: [geojson, gml]
+parser:
+  default_derivation_level: official_vector
+  default_dataset_group: quy_hoach
+refresh:
+  interval_seconds: 604800    # weekly
+rate_limit:
+  max_concurrent: 1
+  max_bytes: 268435456        # 256MB per feature collection
+crawl_policy:
+  delay_seconds: 2
+  respect_robots: true
+canonical_url:
+  strip_params: [f, outputFormat]
+rights:
+  redistribution_status: unknown
+  attribution: "UBND tỉnh Tây Ninh — Cổng GIS tỉnh (gis.tayninh.gov.vn)"
+  access_notes: >
+    Public WFS GetCapabilities on a .gov.vn domain. No robots restrictions
+    observed. Server also hosts legacy Long An layers (longan: workspace
+    excluded — non-planning; cite:qhsdd_* Long An district plans kept).
+provenance:
+  prepared_by: "OpenQuyHoach maintainers"
+  verified_on: "2026-09-19"
+  evidence:
+    - "https://gis.tayninh.gov.vn/geoserver/ows?service=wfs&request=GetCapabilities"
+  notes: >
+    Verified 2026-09-19: 298KB GetCapabilities; planning typenames include
+    A05_TaiNguyenVaMoiTruong/QuyHoachSuDungDatCapTinh, qhsdd_cangiuoc2021,
+    qhsdd_duchoa (Long An districts), sector QuyHoach* layers, RanhGioi*
+    boundaries, and the quyhoach: workspace.

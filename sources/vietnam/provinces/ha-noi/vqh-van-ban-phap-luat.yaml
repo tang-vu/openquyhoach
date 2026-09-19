@@ -1,0 +1,58 @@
+key: vietnam/provinces/ha-noi/vqh-van-ban-phap-luat
+name: "Viện Quy hoạch xây dựng Hà Nội — văn bản pháp luật quy hoạch (PDF)"
+description: >
+  'Văn bản' (legal documents) module on the official NukeViet portal of the
+  Hanoi Institute of Construction Planning (Viện Quy hoạch xây dựng Hà Nội,
+  .gov.vn). Each listing row exposes a `download=1` link serving the signed
+  decision/planning document as PDF via Content-Disposition (e.g. the QĐ
+  2512/QĐ-UBND master-plan approval). Decision numbers and dates are
+  machine-extracted from PDF text — never from filenames alone.
+authority: "Viện Quy hoạch xây dựng Hà Nội"
+jurisdiction: "Thành phố Hà Nội"
+admin_codes:
+  province: "01"
+source_type: html_index
+base_url: "http://vqh.hanoi.gov.vn"
+homepage: "http://vqh.hanoi.gov.vn/index.php?language=vi&nv=laws"
+planning_types: [quy_hoach_chung, quy_hoach_phan_khu, quy_hoach_chi_tiet, van_ban_phap_luat]
+priority: 30
+discovery:
+  index_url: "http://vqh.hanoi.gov.vn/index.php?language=vi&nv=laws"
+  link_selector: 'a[href*="download=1"]'
+  pagination:
+    style: path
+    path_template: "/index.php?language=vi&nv=laws/page-{page}"
+    start: 2
+    max_pages: 20
+  max_resources: 400
+allowed_formats: []           # download URLs carry no extension — sniffed by content
+parser:
+  default_derivation_level: official_document
+  default_dataset_group: hoso_gis
+refresh:
+  interval_seconds: 259200    # 3 days — documents are appended as issued
+rate_limit:
+  max_concurrent: 1
+  max_requests_per_run: 200
+  max_bytes: 67108864         # 64MB per PDF
+crawl_policy:
+  delay_seconds: 1.5
+  max_requests: 250
+  respect_robots: true
+rights:
+  redistribution_status: unknown
+  attribution: "UBND Thành phố Hà Nội / Viện Quy hoạch xây dựng Hà Nội"
+  access_notes: >
+    Public listing on a .gov.vn domain. Legal/planning documents are public
+    administrative records; conservative publication posture retained.
+provenance:
+  prepared_by: "OpenQuyHoach maintainers"
+  verified_on: "2026-09-19"
+  evidence:
+    - "http://vqh.hanoi.gov.vn/index.php?language=vi&nv=laws"
+    - "http://vqh.hanoi.gov.vn/index.php?language=vi&nv=laws&op=detail/Quyet-dinh-so-2512-QD-UBND-v-v-Phe-duyet-Quy-hoach-tong-the-Thu-do-Ha-Noi-tam-nhin-100-nam-283&download=1&id=0"
+  notes: >
+    Verified 2026-09-19: listing paginates /page-2..N; each row links a
+    detail page plus a download=1&id=N URL returning application/pdf with
+    Content-Disposition filename (qd-2512-2026.pdf, 2.2MB verified).
+    RSS feeds exist per document category under nv=laws&op=rss/<cat>.

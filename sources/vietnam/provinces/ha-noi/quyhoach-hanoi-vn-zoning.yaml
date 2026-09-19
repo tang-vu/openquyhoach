@@ -1,0 +1,75 @@
+key: vietnam/provinces/ha-noi/quyhoach-hanoi-vn-zoning
+name: "Cổng tra cứu quy hoạch Hà Nội — ranh quy hoạch phân khu/chung (GeoJSON-in-JS)"
+description: >
+  Public planning-lookup portal for Hanoi (quyhoach.hanoi.vn) serving zoning
+  layers as JavaScript variable assignments containing verbatim GeoJSON
+  FeatureCollections. Covers quy hoạch phân khu (45 zones N1–N11, S1–S5,
+  H2-x, GS…), quy hoạch chung Thủ đô, and đô thị vệ tinh boundaries. Each
+  feature carries dientich/danso plus a `ghichu` citing the official
+  approval decision (e.g. "QĐ phê duyệt: 741/QĐ-UBND ngày 04/02/2013").
+  NOTE: the host is a vendor-operated domain (vietpalm), not .gov.vn — data
+  is harvested as derived_machine_unreviewed pending source-authority
+  verification; officialness is claimed only via the cited decisions.
+authority: "Sở Xây dựng Hà Nội (portal vận hành bởi vietpalm — chưa xác minh tên miền chính thức)"
+jurisdiction: "Thành phố Hà Nội"
+admin_codes:
+  province: "01"
+source_type: http
+base_url: "https://quyhoach.hanoi.vn"
+homepage: "https://quyhoach.hanoi.vn/vietpalm/maps/quyhoach-guest.html"
+planning_types: [quy_hoach_phan_khu, quy_hoach_chung, quy_hoach_vung]
+priority: 30
+discovery:
+  urls:
+    - "https://quyhoach.hanoi.vn/vietpalm/maps/QHHN/json/qhpk.js"
+    - "https://quyhoach.hanoi.vn/vietpalm/maps/QHHN/json/qhc.js"
+    - "https://quyhoach.hanoi.vn/vietpalm/maps/QHHN/json/dtvt.js"
+allowed_formats: []           # .js payloads — sniffed as jsvar_geojson
+parser:
+  default_derivation_level: derived_machine_unreviewed
+  default_dataset_group: quy_hoach
+  layer_map_aliases:
+    qhpk: qhpk_hanoi
+    qhc: qhc_hanoi
+    dtvt: dtvt_hanoi
+  layer_map:
+    qhpk_hanoi:
+      canonical_name: "Quy hoạch phân khu Hà Nội"
+      thematic_group: land_use
+      derivation_level: derived_machine_unreviewed
+      dataset_group: quy_hoach
+    qhc_hanoi:
+      canonical_name: "Quy hoạch chung Thủ đô Hà Nội"
+      thematic_group: land_use
+      derivation_level: derived_machine_unreviewed
+      dataset_group: quy_hoach
+    dtvt_hanoi:
+      canonical_name: "Quy hoạch đô thị vệ tinh Hà Nội"
+      thematic_group: boundaries
+      derivation_level: derived_machine_unreviewed
+      dataset_group: quy_hoach
+refresh:
+  interval_seconds: 604800    # weekly
+rate_limit:
+  max_concurrent: 1
+  max_bytes: 268435456
+crawl_policy:
+  delay_seconds: 2
+  respect_robots: true
+rights:
+  redistribution_status: unknown
+  attribution: "Cổng tra cứu quy hoạch Hà Nội (quyhoach.hanoi.vn) / Sở Xây dựng Hà Nội"
+  access_notes: >
+    Vendor-operated portal; authority claim based on cited approval
+    decisions inside feature properties, not on domain ownership.
+provenance:
+  prepared_by: "OpenQuyHoach maintainers"
+  verified_on: "2026-09-19"
+  evidence:
+    - "https://quyhoach.hanoi.vn/vietpalm/maps/quyhoach-guest.html"
+    - "https://quyhoach.hanoi.vn/vietpalm/maps/QHHN/json/qhpk.js"
+  notes: >
+    Verified 2026-09-19: qhpk.js (390KB, 45 phân-khu features), qhc.js
+    (85KB, master plan QĐ 1259/QĐ-TTg 2011), dtvt.js (59KB, satellite
+    towns). Excluded: dautu.js (land-sale listings), huyenVN.js/tinhVN.js
+    (nationwide basemap boundaries, not Hanoi planning data). WGS84 coords.

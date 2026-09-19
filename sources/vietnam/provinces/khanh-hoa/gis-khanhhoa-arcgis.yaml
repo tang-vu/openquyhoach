@@ -1,0 +1,68 @@
+key: vietnam/provinces/khanh-hoa/gis-khanhhoa-arcgis
+name: "Cổng GIS tỉnh Khánh Hòa — quy hoạch sử dụng đất (ArcGIS REST)"
+description: >
+  Public ArcGIS REST services on the provincial government GIS portal
+  (gis.khanhhoa.gov.vn). Planning-relevant MapServers expose quy hoạch sử
+  dụng đất layers per district (Nha Trang, Cam Ranh, Cam Lâm, Diên Khánh,
+  Khánh Sơn), the Nha Trang general-plan adjustment (QHC_DC2012), Cam Ranh
+  detailed-plan zones with plan boundary, and the administrative-city
+  subdivision plan — served as queryable GeoJSON via standard layer
+  /query endpoints.
+authority: "UBND tỉnh Khánh Hòa — Cổng GIS tỉnh"
+jurisdiction: "Tỉnh Khánh Hòa"
+admin_codes:
+  province: "56"
+source_type: arcgis_rest
+base_url: "https://gis.khanhhoa.gov.vn/arcgis/rest/services/Portal/QHSDDNhaTrang/MapServer"
+homepage: "https://gis.khanhhoa.gov.vn/"
+planning_types: [quy_hoach_su_dung_dat, quy_hoach_chung, quy_hoach_chi_tiet, quy_hoach_phan_khu]
+priority: 25
+discovery:
+  services:
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services/Portal/QHSDDNhaTrang/MapServer"
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services/Portal/QHSDDCamRanh/MapServer"
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services/Portal/QHSDDCamLam/MapServer"
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services/Portal/QHSDDDienKhanh/MapServer"
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services/Portal/QHSDDKhanhSon/MapServer"
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services/Portal/KhanhHoa_SDD/MapServer"
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services/Portal/BanDoHanhChinhTinhKHanhHoa/MapServer"
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services/QH/QHC_DC2012_NhaTrang_SDD/MapServer"
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services/QH/QHCT2000_7KhuQHCamRanh_SDD/MapServer"
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services/QH/QHCT2000_7KhuQHCamRanh_RanhQuyHoach/MapServer"
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services/QH/QHPKCN_KhuDoThiHanhChinh_SDD/MapServer"
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services/Zoning/KT3A_QuyHoachSDD/MapServer"
+  include: "(?i)SDD|RanhQuyHoach|DGT|HanhChinh|QuyHoach|QHC|QHCT|QHPK"
+  exclude: "(?i)HienTrang|annotation"
+  max_resources: 80
+allowed_formats: [geojson]
+parser:
+  default_derivation_level: official_vector
+  default_dataset_group: quy_hoach
+refresh:
+  interval_seconds: 604800    # weekly
+rate_limit:
+  max_concurrent: 1
+  max_bytes: 268435456        # 256MB per layer collection
+crawl_policy:
+  delay_seconds: 1.5
+  respect_robots: true
+canonical_url:
+  strip_params: [f]
+rights:
+  redistribution_status: unknown
+  attribution: "UBND tỉnh Khánh Hòa — Cổng GIS tỉnh (gis.khanhhoa.gov.vn)"
+  access_notes: >
+    Public ArcGIS REST directory on a .gov.vn domain; services enumerated
+    from the published catalog. No robots restrictions observed.
+provenance:
+  prepared_by: "OpenQuyHoach maintainers"
+  verified_on: "2026-09-19"
+  evidence:
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services?f=json"
+    - "https://gis.khanhhoa.gov.vn/arcgis/rest/services/Portal/QHSDDNhaTrang/MapServer?f=json"
+  notes: >
+    Verified 2026-09-19: ArcGIS REST catalog live; QHSDD* district land-use
+    services return WGS84 GeoJSON via /query (f=geojson, resultOffset
+    pagination). HienTrang (existing-conditions) layers excluded — not
+    planning data. VanPhong folder holds Vân Ninh đồ án kỹ thuật layers —
+    candidates for a later descriptor.

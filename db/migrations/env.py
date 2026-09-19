@@ -11,8 +11,8 @@ from sqlalchemy import engine_from_config, pool
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "python" / "openquyhoach_core" / "src"))
 
-from openquyhoach_core.db import Base  # noqa: E402
 import openquyhoach_core.models  # noqa: E402,F401 — register all tables
+from openquyhoach_core.db import Base  # noqa: E402
 
 config = context.config
 

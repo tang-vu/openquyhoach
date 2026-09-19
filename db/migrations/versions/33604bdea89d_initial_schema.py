@@ -1,14 +1,14 @@
 """initial schema
 
 Revision ID: 33604bdea89d
-Revises: 
+Revises:
 Create Date: 2026-09-17 15:01:10.029517
 """
 from pathlib import Path
 
-from alembic import op
-import sqlalchemy as sa
 import geoalchemy2
+import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = '33604bdea89d'

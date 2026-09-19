@@ -15,8 +15,8 @@ Revision ID: b7f2c41d9e10
 Revises: 33604bdea89d
 Create Date: 2026-09-19 12:00:00
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = 'b7f2c41d9e10'

@@ -8,7 +8,6 @@ extraction output stays candidate-level (never auto-official).
 from __future__ import annotations
 
 import pytest
-
 from openquyhoach_ingest.ocr import ocr_available
 
 pytestmark = pytest.mark.skipif(

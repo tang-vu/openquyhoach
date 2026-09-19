@@ -259,3 +259,200 @@ def test_wfs_typename_include_exclude():
     )
     assert [i.metadata["typename"] for i in items] == ["ns:qhpksdd_q1"]
     assert items[0].suggested_filename == "ns_qhpksdd_q1.geojson"
+
+
+# --- arcgis_rest ---------------------------------------------------------
+
+ARCGIS_FIELDS = [
+    {"name": "OBJECTID", "type": "esriFieldTypeOID"},
+    {"name": "TEN", "type": "esriFieldTypeString"},
+]
+
+
+def _arcgis_service(*layer_ids: int) -> dict:
+    return {
+        "layers": [{"id": i, "name": f"layer{i}"} for i in layer_ids],
+        "mapName": "svc",
+    }
+
+
+def _arcgis_layer_meta(name: str, **over) -> dict:
+    meta = {
+        "name": name,
+        "geometryType": "esriGeometryPolygon",
+        "fields": ARCGIS_FIELDS,
+        "maxRecordCount": 2,
+        "advancedQueryCapabilities": {"supportsPagination": True},
+    }
+    meta.update(over)
+    return meta
+
+
+@respx.mock
+def test_arcgis_multi_service_discovery_and_filters():
+    svc_a, svc_b = f"{HOST}/rest/services/QH/A/MapServer", f"{HOST}/rest/services/QH/B/MapServer"
+    respx.get(svc_a).mock(return_value=httpx.Response(200, json=_arcgis_service(0, 1)))
+    respx.get(svc_b).mock(return_value=httpx.Response(200, json=_arcgis_service(0)))
+    respx.get(f"{svc_a}/0").mock(
+        return_value=httpx.Response(200, json=_arcgis_layer_meta("QHSDD_NhaTrang"))
+    )
+    respx.get(f"{svc_a}/1").mock(
+        return_value=httpx.Response(200, json=_arcgis_layer_meta("BaseMap_Roads"))
+    )
+    respx.get(f"{svc_b}/0").mock(
+        return_value=httpx.Response(200, json=_arcgis_layer_meta("QHSDD_CamRanh"))
+    )
+    conn = get_connector("arcgis_rest")
+    items = list(
+        conn.discover(
+            cfg(
+                "arcgis_rest",
+                base_url="",
+                discovery={
+                    "services": [svc_a, svc_b],
+                    "include": "QHSDD",
+                },
+            )
+        )
+    )
+    assert [i.metadata["layer_name"] for i in items] == [
+        "QHSDD_NhaTrang",
+        "QHSDD_CamRanh",
+    ]
+    assert items[0].url == f"{svc_a}/0/query"
+    assert items[0].metadata["oid_field"] == "OBJECTID"
+    assert items[0].metadata["max_record_count"] == 2
+    assert items[0].metadata["supports_pagination"] is True
+
+
+def _features(start: int, n: int) -> list[dict]:
+    return [
+        {
+            "type": "Feature",
+            "properties": {"OBJECTID": start + i, "TEN": f"f{start + i}"},
+            "geometry": {"type": "Point", "coordinates": [0.0, 0.0]},
+        }
+        for i in range(n)
+    ]
+
+
+@respx.mock
+def test_arcgis_fetch_offset_pagination(tmp_path):
+    """maxRecordCount=2, server count=3 → two offset pages."""
+    base = f"{HOST}/rest/services/QH/A/MapServer"
+    calls = []
+
+    def query(req):
+        p = req.url.params
+        if p.get("returnCountOnly") == "true":
+            return httpx.Response(200, json={"count": 3})
+        calls.append(int(p["resultOffset"]))
+        off = int(p["resultOffset"])
+        feats = _features(off, min(2, 3 - off))
+        return httpx.Response(200, json={"features": feats})
+
+    respx.get(f"{base}/0/query").mock(side_effect=query)
+    conn = get_connector("arcgis_rest")
+    from openquyhoach_ingest.connectors.base import DiscoveredItem
+
+    item = DiscoveredItem(
+        url=f"{base}/0/query",
+        suggested_filename="l.geojson",
+        metadata={
+            "layer_name": "L",
+            "max_record_count": 2,
+            "supports_pagination": True,
+            "oid_field": "OBJECTID",
+        },
+    )
+    res = conn.fetch(cfg("arcgis_rest"), item, tmp_path)
+    import json as _json
+
+    fc = _json.loads(res.local_path.read_text())
+    assert [f["properties"]["OBJECTID"] for f in fc["features"]] == [0, 1, 2]
+    assert calls == [0, 2]
+    assert fc["openquyhoach"]["server_feature_count"] == 3
+
+
+@respx.mock
+def test_arcgis_fetch_oid_fallback_on_pagination_error(tmp_path):
+    """Pre-10.3 server: resultOffset rejected → self-heal OID meta + range pages."""
+    base = f"{HOST}/rest/services/QH/Old/MapServer"
+    respx.get(f"{base}/0").mock(
+        return_value=httpx.Response(200, json=_arcgis_layer_meta("Old_Layer"))
+    )
+
+    def query(req):
+        p = req.url.params
+        if p.get("returnCountOnly") == "true":
+            return httpx.Response(200, json={"count": 4})
+        if "resultOffset" in p:
+            return httpx.Response(
+                200, json={"error": {"message": "Pagination is not supported."}}
+            )
+        # OID-range page — server rejects resultRecordCount too
+        if "resultRecordCount" in p:
+            return httpx.Response(
+                200, json={"error": {"message": "Pagination is not supported."}}
+            )
+        last = int(p["where"].split(">")[1])
+        feats = _features(last + 1, min(3, 4 - (last + 1)))
+        return httpx.Response(200, json={"features": feats})
+
+    respx.get(f"{base}/0/query").mock(side_effect=query)
+    conn = get_connector("arcgis_rest")
+    from openquyhoach_ingest.connectors.base import DiscoveredItem
+
+    item = DiscoveredItem(
+        url=f"{base}/0/query",
+        suggested_filename="old.geojson",
+        # stale discovery metadata: no oid_field, claims pagination works
+        metadata={"layer_name": "Old_Layer", "supports_pagination": True},
+    )
+    res = conn.fetch(cfg("arcgis_rest"), item, tmp_path)
+    import json as _json
+
+    fc = _json.loads(res.local_path.read_text())
+    assert [f["properties"]["OBJECTID"] for f in fc["features"]] == [0, 1, 2, 3]
+
+
+@respx.mock
+def test_arcgis_oid_pages_rejects_order_by(tmp_path):
+    """OID path degrades orderByFields + resultRecordCount independently."""
+    base = f"{HOST}/rest/services/QH/Old/MapServer"
+
+    def query(req):
+        p = req.url.params
+        if p.get("returnCountOnly") == "true":
+            return httpx.Response(200, json={"count": 4})
+        if "resultRecordCount" in p:
+            return httpx.Response(
+                200, json={"error": {"message": "Pagination is not supported."}}
+            )
+        if "orderByFields" in p:
+            return httpx.Response(
+                200,
+                json={"error": {"message": "Unable to order results by fields."}},
+            )
+        last = int(p["where"].split(">")[1])
+        feats = _features(last + 1, min(3, 4 - (last + 1)))
+        return httpx.Response(200, json={"features": feats})
+
+    respx.get(f"{base}/0/query").mock(side_effect=query)
+    conn = get_connector("arcgis_rest")
+    from openquyhoach_ingest.connectors.base import DiscoveredItem
+
+    item = DiscoveredItem(
+        url=f"{base}/0/query",
+        suggested_filename="old.geojson",
+        metadata={
+            "layer_name": "Old_Layer",
+            "supports_pagination": False,
+            "oid_field": "OBJECTID",
+        },
+    )
+    res = conn.fetch(cfg("arcgis_rest"), item, tmp_path)
+    import json as _json
+
+    fc = _json.loads(res.local_path.read_text())
+    assert [f["properties"]["OBJECTID"] for f in fc["features"]] == [0, 1, 2, 3]

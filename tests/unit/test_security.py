@@ -89,3 +89,21 @@ class TestSniff:
         assert sniff_format(b'{"type":"FeatureCollection"}', "a.geojson") == "geojson"
         assert sniff_format(b"random", "a.shp") == "shp"
         assert sniff_format(b"random", "a.unknownext") is None
+
+    def test_jsvar_geojson(self):
+        # var name = {...FeatureCollection...}; — quyhoach.hanoi.vn shape
+        body = b'var qhpk = {"type":"FeatureCollection","features":[]};'
+        assert sniff_format(body, "qhpk.js") == "jsvar_geojson"
+        # leading whitespace / $-identifiers still match
+        body2 = b'  var $x_1={ "type": "FeatureCollection", "features": [] };'
+        assert sniff_format(body2, "layer.js") == "jsvar_geojson"
+
+    def test_jsvar_geojson_negative(self):
+        # .js without a var-wrapped FeatureCollection must not classify
+        assert sniff_format(b'alert("hi")', "a.js") is None
+        assert sniff_format(b'var x = [1,2,3];', "a.js") is None
+        # var-FC pattern but wrong extension → not jsvar_geojson
+        body = b'var qhpk = {"type":"FeatureCollection","features":[]};'
+        assert sniff_format(body, "qhpk.txt") is None
+        # FeatureCollection must appear in the sniffed header
+        assert sniff_format(b"var x = {", "a.js") is None

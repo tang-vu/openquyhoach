@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
 import zipfile
 from pathlib import Path
@@ -77,6 +78,10 @@ def sniff_format(header: bytes, filename: str | None = None) -> str | None:
             return fmt
     if filename:
         low = filename.lower()
+        if low.endswith(".js") and re.match(
+            rb"\s*var\s+[A-Za-z_$][\w$]*\s*=\s*\{", header
+        ) and b"FeatureCollection" in header:
+            return "jsvar_geojson"
         for ext, fmt in {
             ".gpkg": "gpkg",
             ".geojson": "geojson",

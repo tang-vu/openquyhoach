@@ -24,7 +24,7 @@ UNITS = [
         None,
         None,
         "GSO mã tỉnh 79 — stable through the 2025 administrative "
-        "reorganisation that merged Bình Dương and Bà Rịa–Vũng Tàu "
+        "reorganisation that merged Bình Dương and Bà Rịa-Vũng Tàu "
         "into the expanded city (effective 2025-07-01).",
     ),
     (
@@ -36,6 +36,36 @@ UNITS = [
         "GSO mã 769 — municipal city established by NQ 1111/NQ-UBTVQH14 "
         "(effective 2021-01-01); ceased as a district-level unit in the "
         "2025 reorganisation of Thành phố Hồ Chí Minh.",
+    ),
+    (
+        "01",
+        "Thành phố Hà Nội",
+        "province",
+        None,
+        None,
+        "GSO mã tỉnh 01 — stable through the 2025 administrative "
+        "reorganisation (commune-level consolidation effective "
+        "2025-07-01 did not change the province-level unit).",
+    ),
+    (
+        "56",
+        "Tỉnh Khánh Hòa",
+        "province",
+        None,
+        date(2025, 6, 30),
+        "GSO mã tỉnh 56 — merged with Ninh Thuận in the 2025 "
+        "reorganisation (new Khánh Hòa province effective 2025-07-01); "
+        "this row is the pre-merge unit referenced by current layers.",
+    ),
+    (
+        "72",
+        "Tỉnh Tây Ninh",
+        "province",
+        None,
+        date(2025, 6, 30),
+        "GSO mã tỉnh 72 — merged with Long An in the 2025 "
+        "reorganisation (new Tây Ninh province effective 2025-07-01); "
+        "this row is the pre-merge unit referenced by current layers.",
     ),
 ]
 

@@ -98,6 +98,39 @@ run in this repo (WSL: `.venv/bin/python3.14 -m pytest`, docker infra via
   `derived_deterministic`), boundary dataset, official plan-map PDF —
   all published.
 
+**Other provinces (verified, ingested)**
+
+- `vietnam/provinces/ha-noi/vqh-van-ban-phap-luat` — Viện Quy hoạch xây
+  dựng Hà Nội (.gov.vn) laws module: 215 official planning/legal PDFs
+  (Luật QH đô thị, Luật Thủ đô, QĐ phê duyệt QHPK…) via html_index +
+  path pagination; `download=1` links → PDF w/ Content-Disposition.
+- `vietnam/provinces/ha-noi/quyhoach-hanoi-vn-zoning` — quyhoach.hanoi.vn
+  lookup portal (vendor-operated, NOT .gov.vn): 3 zoning layers as
+  `var x = {FeatureCollection}` JS files → new `jsvar_geojson` format
+  (raw .js kept as immutable artifact, extraction at ingest). 45 phân-khu
+  zones + master plan + 15 đô thị vệ tinh — honest level
+  `derived_machine_unreviewed` (authority unverified) → review-gated.
+- `vietnam/provinces/khanh-hoa/gis-khanhhoa-arcgis` — provincial ArcGIS
+  REST: 30 layers across 12 MapServers (district QHSDD Nha Trang/Cam
+  Ranh/Cam Lâm/Diên Khánh/Khánh Sơn, QH chung Nha Trang, Cam Ranh detail
+  plans, KT3A zoning, admin boundaries) → official_vector, published.
+- `vietnam/provinces/tay-ninh/gis-tayninh-geoserver-wfs` — provincial
+  GeoServer WFS: 38 planning typenames (QHSDD cấp tỉnh + Long An district
+  plans, sector plans, boundaries) → official_vector, published.
+
+**Connector/ingestor fixes from provincial expansion**
+
+- `arcgis_rest`: `discovery.services` (multi-MapServer descriptors),
+  layer-name include/exclude, `maxRecordCount`-aware page size,
+  OBJECTID-range fallback for pre-10.3 servers without pagination
+  (`supportsPagination:false`), `server_feature_count` audit field.
+- `jsvar_geojson`: `var name = {FC}` container detection in
+  `sniff_format` + extraction branch in `dispatch_artifact`.
+- `_jsonb_safe`: NaN/Infinity floats in source properties → NULL
+  (Postgres JSONB rejects the `NaN` token — crashed real Tây Ninh ingest).
+- Z-dimension geometries forced to 2D for the canonical column
+  (Z preserved losslessly in `source_geometry_ewkb`).
+
 **Tests added (39 new)**
 - Unit: robots policies + UA-group precedence; http client (conditional,
   caps, checksum, retry, redirect/SSRF, UA); discovery connectors (sitemap,
@@ -127,10 +160,16 @@ run in this repo (WSL: `.venv/bin/python3.14 -m pytest`, docker infra via
 
 ## Unresolved questions
 
-- Redistribution terms for the three TP.HCM pilots are `unknown` —
+- Redistribution terms for all real pilots are `unknown` —
   conservative metadata+provenance only until clarified.
-- Should `needs_ocr` scans use an offline OCR adapter next (tesseract), or
-  defer to manual review of text-bearing pages only?
-- Preferred next pilots: national portal (data.gov.vn is legacy DKAN — HTML
-  scrape), Đà Nẵng congdulieu.vn (ZK app — no REST API found), other
-  provincial GeoServers?
+- OCR batch for scanned PDFs is partially run (tesseract vie+eng);
+  remaining scans still `needs_ocr`.
+- Most provincial `.gov.vn` GIS hosts were unreachable from the dev
+  network during discovery (geo-blocking/hosting); verified reachable +
+  onboarded: TP.HCM, Hà Nội, Khánh Hòa, Tây Ninh. Candidates found but
+  not onboarded: gis.cantho.gov.vn (only sample services), gis.hatinh
+  (SPA + token API), gis.ninhbinh (auth-walled), Đà Nẵng congdulieu.vn
+  (ZK app — no REST API), qhkhsdd.hanoi.gov.vn (unreachable).
+- Tây Ninh WFS `max_features: 8000` caps 3 large layers (qhsdd_duchoa,
+  quyhoach1, A05_QuyHoachTaiNguyenNuoc) — raise cap or page server-side
+  when full coverage needed.

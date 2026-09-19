@@ -326,10 +326,15 @@ def _ingest_vector(
             if vf.geometry is not None:
                 try:
                     geom4326, _transformed = _transform_geom(vf.geometry, crs)
+                    if geom4326 is not None and geom4326.has_z:
+                        # canonical column is 2D — Z survives in source_geometry_ewkb
+                        import shapely
+
+                        geom4326 = shapely.force_2d(geom4326)
                 except Exception as exc:
                     geom4326 = None
                     props["_transform_error"] = str(exc)
-            mapped = {field_map.get(k, k): v for k, v in props.items()}
+            mapped = _jsonb_safe({field_map.get(k, k): v for k, v in props.items()})
             classification = (
                 mapped.get("classification")
                 or mapped.get("land_use")
@@ -881,6 +886,53 @@ def _dedupe_semantic(
     return kept
 
 
+def _jsonb_safe(obj):
+    """Recursively replace NaN/Infinity floats with None.
+
+    GeoJSON/SHP sources routinely carry `NaN` attribute values; Python's
+    json module accepts them but PostgreSQL JSONB rejects the token.
+    """
+    import math
+
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _jsonb_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_jsonb_safe(v) for v in obj]
+    return obj
+
+
+def _extract_jsvar_geojson(p: Path) -> Path | None:
+    """Unwrap a `var name = {...FeatureCollection...};` JavaScript file.
+
+    Some provincial portals (e.g. quyhoach.hanoi.vn) publish zoning layers
+    as JS variable assignments. The raw .js remains the immutable artifact;
+    the extracted payload is validated as a GeoJSON FeatureCollection and
+    written to a temp file for the normal vector path.
+    """
+    import re
+
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    m = re.match(r"\s*var\s+[A-Za-z_$][\w$]*\s*=\s*(\{.*\})\s*;?\s*$", text, re.S)
+    if not m:
+        return None
+    try:
+        fc = json.loads(m.group(1))
+    except ValueError:
+        return None
+    if not isinstance(fc, dict) or fc.get("type") != "FeatureCollection" or not isinstance(
+        fc.get("features"), list
+    ):
+        return None
+    dest = Path(tempfile.mkdtemp(prefix="oqh-jsvar-")) / f"{p.stem}.geojson"
+    dest.write_text(json.dumps(fc, ensure_ascii=False), encoding="utf-8")
+    return dest
+
+
 def dispatch_artifact(
     session: Session,
     p: Path,
@@ -900,6 +952,28 @@ def dispatch_artifact(
         dest = Path(tempfile.mkdtemp(prefix="oqh-zip-"))
         for member in safe_extract_zip(p, dest):
             dispatch_artifact(session, member, artifact, version, source_cfg, run, report)
+        return
+    if fmt == "jsvar_geojson":
+        extracted = _extract_jsvar_geojson(p)
+        if extracted is None:
+            record_event(
+                session,
+                entity_type="artifact",
+                entity_id=artifact.id,
+                operation="skipped",
+                run_id=run.id,
+                parameters={"reason": "jsvar_geojson payload failed JSON validation"},
+            )
+            return
+        record_event(
+            session,
+            entity_type="artifact",
+            entity_id=artifact.id,
+            operation="extracted",
+            run_id=run.id,
+            parameters={"transform": "jsvar_geojson_strip", "member": extracted.name},
+        )
+        dispatch_artifact(session, extracted, artifact, version, source_cfg, run, report)
         return
     if is_dwg(p):
         record_event(
