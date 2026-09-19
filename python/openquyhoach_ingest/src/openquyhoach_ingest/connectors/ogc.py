@@ -47,6 +47,14 @@ class WfsConnector:
         # FeatureType list via ElementTree (namespace-agnostic)
         import xml.etree.ElementTree as ET
 
+        import re
+
+        from .common import _patterns
+
+        include = [re.compile(p) for p in _patterns(source.discovery, "include", "url_include")]
+        exclude = [re.compile(p) for p in _patterns(source.discovery, "exclude", "url_exclude")]
+        max_items = int(source.discovery.get("max_resources") or 500)
+        emitted = 0
         root = ET.fromstring(resp.content)
         for ft in root.iter():
             if not ft.tag.endswith("FeatureType"):
@@ -62,6 +70,13 @@ class WfsConnector:
                     crs = child.text
             if not name:
                 continue
+            if include and not any(p.search(name) for p in include):
+                continue
+            if any(p.search(name) for p in exclude):
+                continue
+            emitted += 1
+            if emitted > max_items:
+                return
             yield DiscoveredItem(
                 url=base,
                 suggested_filename=f"{name.replace(':', '_')}.geojson",
@@ -81,7 +96,11 @@ class WfsConnector:
         }
         url = item.url + "?" + urlencode(params)
         check_url_allowed(url)
-        out = Path(tempfile.mkstemp(dir=workdir, suffix=".geojson")[1])
+        # name the file after the typename: GDAL derives the OGR layer name
+        # from the file stem for GeoJSON, so a tempfile would poison
+        # layer_map matching and dataset naming
+        fname = item.suggested_filename or "features.geojson"
+        out = workdir / fname
         with _client() as c:
             resp = c.get(item.url, params=params)
             resp.raise_for_status()

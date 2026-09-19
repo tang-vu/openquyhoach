@@ -1,0 +1,56 @@
+key: vietnam/provinces/ho-chi-minh/stnmt-wcs-lidar-vandai3-thuduc
+name: "STNMT TP.HCM GeoServer — ảnh trực giao LiDAR vành đai 3 Thủ Đức (WCS)"
+description: >
+  OGC WCS 2.0.1 coverage tnmt__vd3_lidar_td on the HCMC Department of
+  Natural Resources and Environment GeoServer: "Ảnh trực giao Lidar
+  2019-2020 dọc vành đai 3 khu vực Thủ Đức" — official LiDAR orthophoto
+  mosaic (RGBA, EPSG:4326, native ~1m grid). Discovery fetches a bounded
+  subset via WCS GetCoverage in native resolution (GeoTIFF).
+authority: "Sở Tài nguyên và Môi trường Thành phố Hồ Chí Minh"
+jurisdiction: "Thành phố Hồ Chí Minh"
+admin_codes:
+  province: "79"
+source_type: http
+base_url: "https://geodata-stnmt.tphcm.gov.vn/geoserver/ows"
+homepage: "https://geoportal-stnmt.tphcm.gov.vn/"
+planning_types: [ban_do_dia_hinh, hien_trang]
+priority: 40
+discovery:
+  urls:
+    # ~0.002deg subset over the Vành đai 3 corridor, native resolution.
+    # The full coverage is ~3.7 gigapixels — subsets keep the artifact
+    # bounded; the exact request URL is stored in provenance.
+    - "https://geodata-stnmt.tphcm.gov.vn/geoserver/ows?service=WCS&version=2.0.1&request=GetCoverage&coverageId=tnmt__vd3_lidar_td&subset=Lat(10.84,10.842)&subset=Long(106.83,106.832)&format=image%2Ftiff"
+allowed_formats: [tiff]
+parser:
+  default_derivation_level: official_raster
+  default_dataset_group: hien_trang
+refresh:
+  interval_seconds: 2592000   # monthly — a 2019-2020 mosaic rarely changes
+rate_limit:
+  max_concurrent: 1
+  max_bytes: 134217728        # 128MB per GeoTIFF
+crawl_policy:
+  delay_seconds: 2
+  respect_robots: true
+rights:
+  redistribution_status: unknown
+  attribution: "Sở Tài nguyên và Môi trường Thành phố Hồ Chí Minh"
+  access_notes: >
+    Public OGC WCS service on a .gov.vn domain; no robots.txt present
+    (verified 2026-09-19). No explicit licence — conservative posture.
+provenance:
+  prepared_by: "OpenQuyHoach maintainers"
+  verified_on: "2026-09-19"
+  evidence:
+    - "https://geodata-stnmt.tphcm.gov.vn/geoserver/ows?service=WCS&version=2.0.1&request=GetCapabilities"
+    - "https://geoportal-stnmt.tphcm.gov.vn/geonetwork/srv/api/records/c6a3f541-64ea-4782-91da-2ae0f52eaede"
+  notes: >
+    Coverage title and bounds taken verbatim from the authority's
+    DescribeCoverage response; subset coordinates recorded in the
+    request URL which is itself stored as provenance.
+meta:
+  wcs_coverage_id: "tnmt__vd3_lidar_td"
+  coverage_title: "Ảnh trực giao Lidar 2019-2020 dọc vành đai 3 khu vực Thủ Đức"
+  subset: "Lat(10.84,10.842) Long(106.83,106.832) EPSG:4326, native resolution"
+enabled: true

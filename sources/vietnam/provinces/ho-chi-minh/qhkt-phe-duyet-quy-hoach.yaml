@@ -1,0 +1,54 @@
+key: vietnam/provinces/ho-chi-minh/qhkt-phe-duyet-quy-hoach
+name: "Sở QHKT TP.HCM — quyết định phê duyệt quy hoạch (PDF)"
+description: >
+  'Quyết định phê duyệt quy hoạch' listing on the official website of the
+  HCMC Department of Planning and Architecture (Sở Quy hoạch - Kiến trúc).
+  Each row links directly to a signed UBND TP.HCM approval-decision PDF
+  hosted under /Uploads/Document/ApproveDecision/. Decision numbers and
+  dates are machine-extracted from PDF text — never from filenames alone.
+authority: "Sở Quy hoạch - Kiến trúc Thành phố Hồ Chí Minh"
+jurisdiction: "Thành phố Hồ Chí Minh"
+admin_codes:
+  province: "79"
+source_type: html_index
+base_url: "https://qhkt.hochiminhcity.gov.vn"
+homepage: "https://qhkt.hochiminhcity.gov.vn/quyet-dinh-phe-duyet-quy-hoach.html"
+planning_types: [quy_hoach_phan_khu, quy_hoach_chi_tiet, quy_hoach_chung]
+priority: 30
+discovery:
+  index_url: "https://qhkt.hochiminhcity.gov.vn/quyet-dinh-phe-duyet-quy-hoach.html"
+  link_selector: "a"
+  include: "ApproveDecision/.*\\.pdf$"
+  max_resources: 250
+allowed_formats: [pdf]
+parser:
+  default_derivation_level: official_document
+  default_dataset_group: hoso_gis
+refresh:
+  interval_seconds: 259200    # 3 days — decisions are appended as approved
+rate_limit:
+  max_concurrent: 1
+  max_requests_per_run: 300
+  max_bytes: 67108864         # 64MB per PDF
+crawl_policy:
+  delay_seconds: 1.5
+  max_requests: 320
+  respect_robots: true
+rights:
+  redistribution_status: unknown
+  attribution: "UBND Thành phố Hồ Chí Minh / Sở Quy hoạch - Kiến trúc TP.HCM"
+  access_notes: >
+    Public listing on a .gov.vn domain; no robots.txt present (verified
+    2026-09-19). Approval decisions are public administrative documents;
+    conservative publication posture retained regardless.
+provenance:
+  prepared_by: "OpenQuyHoach maintainers"
+  verified_on: "2026-09-19"
+  evidence:
+    - "https://qhkt.hochiminhcity.gov.vn/quyet-dinh-phe-duyet-quy-hoach.html"
+    - "https://qhkt.hochiminhcity.gov.vn/van-ban-so-da-ban-hanh.html"
+  notes: >
+    qhkt.hochiminhcity.gov.vn is the official portal of Sở Quy hoạch -
+    Kiến trúc TP.HCM (linked from the department's own 'văn bản' pages).
+    PDFs under ApproveDecision/ are UBND-signed planning approvals.
+enabled: true

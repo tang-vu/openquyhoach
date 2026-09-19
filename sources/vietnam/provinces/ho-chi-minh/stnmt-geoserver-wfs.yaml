@@ -1,0 +1,76 @@
+key: vietnam/provinces/ho-chi-minh/stnmt-geoserver-wfs
+name: "STNMT TP.HCM GeoServer — quy hoạch phân khu sử dụng đất (WFS)"
+description: >
+  Public OGC WFS endpoint of the HCMC Department of Natural Resources and
+  Environment (Sở Tài nguyên và Môi trường) GeoServer. Exposes official
+  zoning-plan vector layers (quy hoạch phân khu tỷ lệ 1/2000, lớp sử dụng
+  đất) per district plus administrative boundaries, alongside the same
+  layers catalogued in the department's GeoNetwork metadata record
+  c6a3f541-64ea-4782-91da-2ae0f52eaede.
+authority: "Sở Tài nguyên và Môi trường Thành phố Hồ Chí Minh"
+jurisdiction: "Thành phố Hồ Chí Minh"
+admin_codes:
+  province: "79"
+source_type: ogc_wfs
+base_url: "https://geodata-stnmt.tphcm.gov.vn/geoserver/tnmt/wfs"
+homepage: "https://geoportal-stnmt.tphcm.gov.vn/"
+planning_types: [quy_hoach_phan_khu, quy_hoach_su_dung_dat]
+priority: 20
+discovery:
+  # FeatureType names are matched against include/exclude regexes.
+  include: "(?i)qhpksdd|QHPKSDD|DGHC_QH"
+  max_features: 5000          # per-typename GetFeature cap (pilot)
+  max_resources: 40
+allowed_formats: [geojson, gml]
+parser:
+  default_derivation_level: official_vector
+  default_dataset_group: quy_hoach
+  layer_map_aliases:
+    tnmt_QHPKSDD_SHAPE: qhpk_sdd
+    tnmt_nhabe_qhpksdd: qhpk_sdd
+    tnmt_binhtan_qhpksdd: qhpk_sdd
+    tnmt_qhpksdd_quan12: qhpk_sdd
+    tnmt_DGHC_QH_2021: dghc_quy_hoach
+  layer_map:
+    qhpk_sdd:
+      canonical_name: "Quy hoạch phân khu — sử dụng đất"
+      thematic_group: land_use
+      derivation_level: official_vector
+      dataset_group: quy_hoach
+    dghc_quy_hoach:
+      canonical_name: "Địa giới hành chính (quy hoạch)"
+      thematic_group: boundaries
+      derivation_level: official_vector
+      dataset_group: moc_gioi
+refresh:
+  interval_seconds: 604800    # weekly — zoning data changes rarely
+rate_limit:
+  max_concurrent: 1
+  max_bytes: 268435456        # 256MB per feature collection
+crawl_policy:
+  delay_seconds: 2
+  respect_robots: true
+canonical_url:
+  strip_params: [f, outputFormat]
+rights:
+  redistribution_status: unknown
+  attribution: "Sở Tài nguyên và Môi trường TP.HCM"
+  access_notes: >
+    Public OGC service on a .gov.vn domain; no robots.txt present
+    (verified 2026-09-19). No explicit licence published — stored and
+    exposed conservatively pending rights clarification.
+  notes: >
+    OGC services are a standard government publication mechanism;
+    geometry remains attributable to STNMT via provenance.
+provenance:
+  prepared_by: "OpenQuyHoach maintainers"
+  verified_on: "2026-09-19"
+  evidence:
+    - "https://geoportal-stnmt.tphcm.gov.vn/geonetwork/srv/api/records/c6a3f541-64ea-4782-91da-2ae0f52eaede"
+    - "https://geodata-stnmt.tphcm.gov.vn/geoserver/tnmt/wfs?service=WFS&request=GetCapabilities"
+    - "https://thongtinquyhoach.hochiminhcity.gov.vn/"
+  notes: >
+    GeoNetwork metadata record (ISO 19115) identifies the QHPKSDD_SHAPE
+    layer as quy hoạch phân khu tỷ lệ 1/2000 sử dụng đất and names the
+    same GeoServer WMS/WFS endpoints as online resources.
+enabled: true

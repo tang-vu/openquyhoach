@@ -248,6 +248,7 @@ def _ingest_vector(
 
     parser = source_cfg.parser if source_cfg else {}
     layer_map = parser.get("layer_map") or {}
+    aliases = parser.get("layer_map_aliases") or {}
     crs_override = parser.get("crs_override")
     default_level = (
         parser.get("default_derivation_level") or DerivationLevel.DERIVED_MACHINE_UNREVIEWED.value
@@ -257,7 +258,14 @@ def _ingest_vector(
 
     for linfo in layers_info:
         crs = describe_crs(crs_override) if crs_override else linfo.crs
-        lcfg = layer_map.get(linfo.name, {})
+        # match order: exact layer name, its alias, filename stem, stem's
+        # alias — connectors name files after the remote layer so stems
+        # carry meaning
+        lcfg = {}
+        for cand in (linfo.name, aliases.get(linfo.name), path.stem, aliases.get(path.stem)):
+            if cand and cand in layer_map:
+                lcfg = layer_map[cand]
+                break
         group = normalize_group_name(lcfg.get("thematic_group") or linfo.name)
         ds = Dataset(
             planning_version_id=version.id,
@@ -574,8 +582,12 @@ def _ingest_pdf(
             if (planning.get("approving_authority") or (source_cfg and source_cfg.authority))
             else MetadataOrigin.DERIVED_MACHINE.value
         )
-    # document-level origin = weakest origin used anywhere on the record
+    # document-level origin = weakest origin used anywhere on the record —
+    # machine candidates persisted in meta count as machine-derived
+    # metadata even when they are not promoted into fields
     origins = set(field_origins.values())
+    if c:
+        origins.add(MetadataOrigin.DERIVED_MACHINE.value)
     if MetadataOrigin.DERIVED_MACHINE.value in origins:
         doc_origin = MetadataOrigin.DERIVED_MACHINE.value
     elif MetadataOrigin.UNKNOWN.value in origins:
@@ -726,70 +738,83 @@ def stage_artifact(
     )
 
     version = resolve_planning_version(session, source_cfg, artifact)
+    dispatch_artifact(session, fetch.local_path, artifact, version, source_cfg, run, report)
+    artifact.status = ArtifactStatus.IMPORTED.value
+    return report
 
-    def _dispatch(p: Path, artifact_row: SourceArtifact = artifact):
-        fmt = sniff_format(p.read_bytes()[:512], p.name)
-        if fmt == "zip":
-            dest = Path(tempfile.mkdtemp(prefix="oqh-zip-"))
-            for member in safe_extract_zip(p, dest):
-                _dispatch(member, artifact_row)
-            return
-        if is_dwg(p):
-            record_event(
-                session,
-                entity_type="artifact",
-                entity_id=artifact_row.id,
-                operation="rejected",
-                run_id=run.id,
-                parameters={"reason": "dwg_unsupported_convert_to_dxf_or_gpkg"},
-            )
-            session.add(
-                ReviewTask(
-                    target_type="artifact",
-                    target_id=artifact_row.id,
-                    task_type=TaskType.CURATE_SOURCE.value,
-                    priority=80,
-                    reason="DWG file detected — convert to DXF/GeoPackage before ingest",
-                )
-            )
-            return
-        if fmt in VECTOR_FORMATS or is_vector_file(p):
-            try:
-                datasets = _ingest_vector(session, artifact_row, p, version, source_cfg, run)
-                report["datasets"].extend(str(d.id) for d in datasets)
-                run.imported_count += len(datasets)
-            except UnsupportedFormatError as exc:
-                record_event(
-                    session,
-                    entity_type="artifact",
-                    entity_id=artifact_row.id,
-                    operation="rejected",
-                    run_id=run.id,
-                    parameters={"reason": str(exc)},
-                )
-                run.rejected_count += 1
-            return
-        if fmt in RASTER_FORMATS:
-            ds = _ingest_raster(session, artifact_row, p, version, source_cfg, run)
-            report["datasets"].append(str(ds.id))
-            run.imported_count += 1
-            return
-        if fmt in DOC_FORMATS:
-            doc = _ingest_pdf(session, artifact_row, p, version, source_cfg, run)
-            report["documents"].append(str(doc.id))
-            return
+
+def dispatch_artifact(
+    session: Session,
+    p: Path,
+    artifact: SourceArtifact,
+    version: PlanningVersion,
+    source_cfg: SourceConfig | None,
+    run: IngestionRun,
+    report: dict,
+) -> None:
+    """Route a fetched file to the vector/raster/document ingestors.
+
+    Module-level (not a closure) so stored artifacts can be re-dispatched
+    without re-downloading — e.g. after a parser/layer-map fix.
+    """
+    fmt = sniff_format(p.read_bytes()[:512], p.name)
+    if fmt == "zip":
+        dest = Path(tempfile.mkdtemp(prefix="oqh-zip-"))
+        for member in safe_extract_zip(p, dest):
+            dispatch_artifact(session, member, artifact, version, source_cfg, run, report)
+        return
+    if is_dwg(p):
         record_event(
             session,
             entity_type="artifact",
-            entity_id=artifact_row.id,
-            operation="skipped",
+            entity_id=artifact.id,
+            operation="rejected",
             run_id=run.id,
-            parameters={"reason": f"unhandled format {fmt}"},
+            parameters={"reason": "dwg_unsupported_convert_to_dxf_or_gpkg"},
         )
-
-    _dispatch(fetch.local_path)
-    artifact.status = ArtifactStatus.IMPORTED.value
-    return report
+        session.add(
+            ReviewTask(
+                target_type="artifact",
+                target_id=artifact.id,
+                task_type=TaskType.CURATE_SOURCE.value,
+                priority=80,
+                reason="DWG file detected — convert to DXF/GeoPackage before ingest",
+            )
+        )
+        return
+    if fmt in VECTOR_FORMATS or is_vector_file(p):
+        try:
+            datasets = _ingest_vector(session, artifact, p, version, source_cfg, run)
+            report["datasets"].extend(str(d.id) for d in datasets)
+            run.imported_count += len(datasets)
+        except UnsupportedFormatError as exc:
+            record_event(
+                session,
+                entity_type="artifact",
+                entity_id=artifact.id,
+                operation="rejected",
+                run_id=run.id,
+                parameters={"reason": str(exc)},
+            )
+            run.rejected_count += 1
+        return
+    if fmt in RASTER_FORMATS:
+        ds = _ingest_raster(session, artifact, p, version, source_cfg, run)
+        report["datasets"].append(str(ds.id))
+        run.imported_count += 1
+        return
+    if fmt in DOC_FORMATS:
+        doc = _ingest_pdf(session, artifact, p, version, source_cfg, run)
+        report["documents"].append(str(doc.id))
+        return
+    record_event(
+        session,
+        entity_type="artifact",
+        entity_id=artifact.id,
+        operation="skipped",
+        run_id=run.id,
+        parameters={"reason": f"unhandled format {fmt}"},
+    )
 
 
 # ---------------------------------------------------------------------------
