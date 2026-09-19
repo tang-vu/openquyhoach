@@ -98,15 +98,36 @@ def provenance(entity_type: str, entity_id: uuid.UUID):
 
 @router.get("/coverage")
 def coverage(page: PageDep, state: str | None = None):
+    """Coverage summary rows enriched with live source freshness/health —
+    'no source discovered' stays distinct from 'no planning exists'."""
+    from datetime import UTC, datetime
+
+    from openquyhoach_core.models import Source, SourceCrawlState
+
+    now = datetime.now(UTC)
     with session_scope() as s:
         qy = s.query(CoverageSummary)
         if state:
             qy = qy.filter(CoverageSummary.state == state)
         total = qy.count()
         rows = qy.offset(page.offset).limit(page.limit).all()
-        return {
-            "total": total,
-            "items": [
+        items = []
+        for c in rows:
+            src_rows = (
+                s.query(SourceCrawlState)
+                .join(Source, Source.id == SourceCrawlState.source_id)
+                .filter(Source.admin_unit_id == c.admin_unit_id)
+                .all()
+            )
+            last_success = max(
+                (st.last_success_at for st in src_rows if st.last_success_at),
+                default=None,
+            )
+            last_change = max(
+                (st.last_change_at for st in src_rows if st.last_change_at),
+                default=None,
+            )
+            items.append(
                 {
                     "admin_unit_id": str(c.admin_unit_id),
                     "state": c.state,
@@ -115,7 +136,15 @@ def coverage(page: PageDep, state: str | None = None):
                     "dataset_count": c.dataset_count,
                     "reviewed_count": c.reviewed_count,
                     "last_checked": str(c.last_checked) if c.last_checked else None,
+                    "freshness": {
+                        "last_successful_check": str(last_success) if last_success else None,
+                        "last_detected_change": str(last_change) if last_change else None,
+                        "source_health": sorted({st.health for st in src_rows if st.health}),
+                        "due_for_check": any(
+                            st.next_check_at is None or st.next_check_at <= now
+                            for st in src_rows
+                        ),
+                    },
                 }
-                for c in rows
-            ],
-        }
+            )
+        return {"total": total, "items": items}

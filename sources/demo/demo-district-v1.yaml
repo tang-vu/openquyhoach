@@ -6,6 +6,8 @@ description: >
   Contains no real planning information.
 authority: "UBND Tỉnh Mẫu (SYNTHETIC)"
 jurisdiction: "DemoDistrict"
+admin_codes:
+  district: "SYNTH-DEMO-01"
 source_type: file
 base_url: "file://fixtures/synthetic/demo_district"
 discovery:

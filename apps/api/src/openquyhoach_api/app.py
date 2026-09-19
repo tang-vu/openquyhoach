@@ -9,7 +9,7 @@ from openquyhoach_core.errors import OQHError
 from openquyhoach_core.logging import configure_logging, get_logger
 from openquyhoach_core.settings import get_settings
 
-from .routers import browse, georef, ingest, publish, query
+from .routers import browse, georef, ingest, ops, publish, query
 
 log = get_logger(__name__)
 
@@ -61,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(ingest.router)
     app.include_router(publish.router)
     app.include_router(georef.router)
+    app.include_router(ops.router)
 
     @app.get("/healthz")
     def healthz():

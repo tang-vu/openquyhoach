@@ -35,7 +35,9 @@ def source_out(s: Source) -> dict:
         "rights_statement": s.rights_statement,
         "redistribution_status": s.redistribution_status,
         "enabled": s.enabled,
+        "priority": s.priority,
         "authority_id": str(s.authority_id) if s.authority_id else None,
+        "admin_unit_id": str(s.admin_unit_id) if s.admin_unit_id else None,
     }
 
 
@@ -82,6 +84,7 @@ def version_out(v: PlanningVersion) -> dict:
         "effective_from": str(v.effective_from) if v.effective_from else None,
         "effective_to": str(v.effective_to) if v.effective_to else None,
         "legal_status": v.legal_status,
+        "metadata_origin": v.metadata_origin,
         "supersedes_version_id": str(v.supersedes_version_id) if v.supersedes_version_id else None,
     }
 
@@ -123,6 +126,8 @@ def document_out(d: Document) -> dict:
         "title": d.title,
         "signed_date": str(d.signed_date) if d.signed_date else None,
         "issuing_authority": d.issuing_authority,
+        "metadata_origin": d.metadata_origin,
+        "field_origins": (d.meta or {}).get("field_origins"),
         "page_count": d.page_count,
         "artifact_id": str(d.artifact_id) if d.artifact_id else None,
         "planning_version_id": str(d.planning_version_id),
