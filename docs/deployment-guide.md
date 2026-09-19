@@ -45,10 +45,17 @@ Dockerfiles pin tags; no `latest`.
 - Swap MinIO for any S3 backend via `OQH_S3_*`; swap Valkey for Redis.
 - Run worker (`make worker` / `openquyhoach-worker`) with
   `OQH_QUEUE_BACKEND=redis` for background ingest/georef jobs.
+- Run the scheduler as a daemon (`openquyhoach scheduler loop
+  --interval 60`) or an external timer calling `openquyhoach scheduler
+  tick`; with `OQH_QUEUE_BACKEND=redis`, `sync_source` jobs land on the
+  worker fleet. Per-host concurrency comes from each descriptor's
+  `rate_limit.concurrent_requests`.
 - Rotate `OQH_ADMIN_TOKEN`; do not expose it client-side (the dev UI stores
   it in localStorage for demo only).
 - Back up Postgres + object store together; PMTiles/manifests are
-  content-addressed and re-derivable from artifacts + code.
+  content-addressed and re-derivable from artifacts + code. Source
+  evidence is never deleted — disappeared upstream resources keep their
+  artifacts and provenance (see `docs/crawler-operations.md`).
 - Manifests are unsigned in V1 (format designed for signing — see roadmap).
 
 ## Known environment caveat (WSL)
