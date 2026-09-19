@@ -17,6 +17,8 @@ review state — ingestion alone never makes data authoritative.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import tempfile
 import uuid
@@ -57,6 +59,7 @@ from openquyhoach_geo.vector import is_dwg, is_vector_file
 from openquyhoach_geo.vn_gis import normalize_group_name
 from openquyhoach_quality.engine import FeaturePayload, LayerPayload, ValidationContext, run_rules
 from openquyhoach_quality.persist import persist_findings
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .connectors.base import FetchResult, SourceConfig
@@ -743,6 +746,109 @@ def stage_artifact(
     return report
 
 
+def _vector_content_digest(session: Session, dataset: Dataset) -> str:
+    """Semantic digest of a vector dataset — sorted over every feature's
+    (layer, external id, class, properties, WKB). Byte-level upstream
+    differences (e.g. GeoServer re-rendering identical features) produce
+    the same digest; genuine content changes do not."""
+    h = hashlib.sha256()
+    rows = session.execute(
+        select(
+            Layer.canonical_name,
+            Feature.stable_external_id,
+            Feature.classification,
+            Feature.properties,
+            func.ST_AsBinary(Feature.geometry),
+        )
+        .join(Layer, Feature.layer_id == Layer.id)
+        .where(Layer.dataset_id == dataset.id)
+    ).all()
+    for name, ext_id, cls, props, wkb in sorted(
+        rows,
+        key=lambda r: (
+            r[0] or "",
+            r[1] or "",
+            r[2] or "",
+            json.dumps(r[3], sort_keys=True, default=str),
+            bytes(r[4] or b""),
+        ),
+    ):
+        h.update((name or "").encode())
+        h.update(b"\x00")
+        h.update((ext_id or "").encode())
+        h.update(b"\x00")
+        h.update((cls or "").encode())
+        h.update(b"\x00")
+        h.update(json.dumps(props, sort_keys=True, default=str).encode())
+        h.update(b"\x00")
+        h.update(bytes(wkb or b""))
+        h.update(b"\x00")
+    return h.hexdigest()
+
+
+def _dedupe_semantic(
+    session: Session, datasets: list[Dataset], run: IngestionRun
+) -> list[Dataset]:
+    """Drop freshly-ingested datasets whose feature content is identical
+    to the previous dataset of the same name in the same planning record.
+
+    The new immutable artifact and its observation/change event stay —
+    only the redundant derived copy is removed. The now-empty version is
+    deleted too when nothing references it."""
+    kept: list[Dataset] = []
+    for ds in datasets:
+        digest = _vector_content_digest(session, ds)
+        meta = dict(ds.meta or {})
+        meta["content_digest"] = digest
+        ds.meta = meta
+        prior = session.scalars(
+            select(Dataset)
+            .join(PlanningVersion, Dataset.planning_version_id == PlanningVersion.id)
+            .where(
+                Dataset.name == ds.name,
+                Dataset.id != ds.id,
+                PlanningVersion.planning_record_id
+                == ds.planning_version.planning_record_id,
+            )
+            .order_by(Dataset.created_at.desc())
+        ).first()
+        prior_digest = (
+            (prior.meta or {}).get("content_digest")
+            if prior
+            else None
+        ) or (_vector_content_digest(session, prior) if prior else None)
+        if prior is None or prior_digest != digest:
+            kept.append(ds)
+            continue
+        version = ds.planning_version
+        for layer in ds.layers:
+            session.query(Feature).filter_by(layer_id=layer.id).delete()
+            session.delete(layer)
+        session.delete(ds)
+        session.flush()
+        record_event(
+            session,
+            entity_type="version",
+            entity_id=version.id,
+            operation="deduplicated",
+            run_id=run.id,
+            parameters={
+                "dataset": ds.name,
+                "content_digest": digest,
+                "kept_dataset_id": str(prior.id),
+            },
+        )
+        run.deduped_count = getattr(run, "deduped_count", 0) + 1
+        remaining_docs = session.scalar(
+            select(func.count(Document.id)).where(
+                Document.planning_version_id == version.id
+            )
+        )
+        if not version.datasets and not remaining_docs:
+            session.delete(version)
+    return kept
+
+
 def dispatch_artifact(
     session: Session,
     p: Path,
@@ -785,6 +891,7 @@ def dispatch_artifact(
     if fmt in VECTOR_FORMATS or is_vector_file(p):
         try:
             datasets = _ingest_vector(session, artifact, p, version, source_cfg, run)
+            datasets = _dedupe_semantic(session, datasets, run)
             report["datasets"].extend(str(d.id) for d in datasets)
             run.imported_count += len(datasets)
         except UnsupportedFormatError as exc:

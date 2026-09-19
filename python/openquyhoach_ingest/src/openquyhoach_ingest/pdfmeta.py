@@ -128,9 +128,34 @@ def inspect_pdf(path: str | Path) -> PdfInfo:
     text = "\n".join(page_texts)
     has_text = any(p.has_text for p in pages)
 
+    candidates = extract_candidates(page_texts)
+
+    # flat value map kept for existing consumers
+    candidate_codes = {k: c.value for k, c in candidates.items()}
+
+    return PdfInfo(
+        page_count=len(reader.pages),
+        metadata=meta,
+        pages=pages,
+        text=text,
+        has_embedded_text=has_text,
+        needs_ocr=not has_text and any(p.image_count > 0 for p in pages),
+        candidate_codes=candidate_codes,
+        candidates=candidates,
+    )
+
+
+def extract_candidates(page_texts: list[str]) -> dict[str, Candidate]:
+    """Derive metadata candidates from raw page text with evidence.
+
+    Shared by embedded-text inspection (``inspect_pdf``) and the OCR path —
+    every match stays a *candidate* carrying page + snippet evidence, never
+    authoritative by itself.
+    """
     from openquyhoach_core.text import vn_normalize
 
     folded_pages = [vn_normalize(t) for t in page_texts]
+    candidates: dict[str, Candidate] = {}
 
     def _first(name: str, pattern: re.Pattern, group_fmt) -> None:
         """Record the first match with page + snippet evidence."""
@@ -145,7 +170,6 @@ def inspect_pdf(path: str | Path) -> PdfInfo:
                 )
                 return
 
-    candidates: dict[str, Candidate] = {}
     _first("decision_number", RE_DECISION, lambda m: m.group(1).strip().upper())
     _first(
         "signed_date",
@@ -172,17 +196,4 @@ def inspect_pdf(path: str | Path) -> PdfInfo:
         RE_PLANNING_PERIOD,
         lambda m: "-".join(g for g in m.groups() if g),
     )
-
-    # flat value map kept for existing consumers
-    candidate_codes = {k: c.value for k, c in candidates.items()}
-
-    return PdfInfo(
-        page_count=len(reader.pages),
-        metadata=meta,
-        pages=pages,
-        text=text,
-        has_embedded_text=has_text,
-        needs_ocr=not has_text and any(p.image_count > 0 for p in pages),
-        candidate_codes=candidate_codes,
-        candidates=candidates,
-    )
+    return candidates

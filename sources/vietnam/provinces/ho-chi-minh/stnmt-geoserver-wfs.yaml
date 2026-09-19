@@ -18,7 +18,7 @@ planning_types: [quy_hoach_phan_khu, quy_hoach_su_dung_dat]
 priority: 20
 discovery:
   # FeatureType names are matched against include/exclude regexes.
-  include: "(?i)qhpksdd|QHPKSDD|DGHC_QH"
+  include: "(?i)qhpksdd|DGHC"
   max_features: 5000          # per-typename GetFeature cap (pilot)
   max_resources: 40
 allowed_formats: [geojson, gml]
@@ -31,6 +31,8 @@ parser:
     tnmt_binhtan_qhpksdd: qhpk_sdd
     tnmt_qhpksdd_quan12: qhpk_sdd
     tnmt_DGHC_QH_2021: dghc_quy_hoach
+    tnmt_DGHC_XP_2021: dghc_quy_hoach
+    tnmt_DGHC_TD: dghc_quy_hoach
   layer_map:
     qhpk_sdd:
       canonical_name: "Quy hoạch phân khu — sử dụng đất"

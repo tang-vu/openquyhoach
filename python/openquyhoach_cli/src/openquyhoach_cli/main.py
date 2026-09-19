@@ -720,6 +720,25 @@ def scheduler_loop_cmd(
     scheduler_loop(interval_s=interval, once=once)
 
 
+@app.command("ocr")
+def ocr_cmd(
+    limit: int = typer.Option(20, "--limit"),
+    dpi: int = typer.Option(200, "--dpi"),
+    lang: str = typer.Option("vie+eng", "--lang"),
+    max_pages: int = typer.Option(8, "--max-pages"),
+):
+    """OCR scanned decision PDFs (tesseract). Output stays derived_machine + review-gated."""
+    from openquyhoach_core.db import session_scope
+    from openquyhoach_ingest.ocr import ocr_available, ocr_pending_documents
+
+    if not ocr_available():
+        console.print("[red]OCR unavailable — install poppler (pdftoppm) + tesseract with 'vie'[/]")
+        raise typer.Exit(1)
+    with session_scope() as s:
+        stats = ocr_pending_documents(s, limit=limit, dpi=dpi, lang=lang, max_pages=max_pages)
+    console.print_json(json.dumps(stats, ensure_ascii=False))
+
+
 def main():  # console_scripts entry
     app()
 
