@@ -91,6 +91,12 @@ run in this repo (WSL: `.venv/bin/python3.14 -m pytest`, docker infra via
   HTML listing → 190+ scanned decision PDFs (needs_ocr + review tasks).
 - `vietnam/provinces/ho-chi-minh/stnmt-wcs-lidar-vandai3-thuduc` — official
   WCS GeoTIFF (LiDAR orthophoto).
+- `vietnam/provinces/ho-chi-minh/sqhkt-qlqh-portal` — official Sở QHKT
+  portal API (`sqhkt_grid` connector): grid-samples `POST /api/doan/ranhqhpk`
+  to enumerate every approved QHPK plan city-wide (no bulk list exists).
+  ~129 plans → per-plan record + version (decision number/date at
+  `derived_deterministic`), boundary dataset, official plan-map PDF —
+  all published.
 
 **Tests added (39 new)**
 - Unit: robots policies + UA-group precedence; http client (conditional,
