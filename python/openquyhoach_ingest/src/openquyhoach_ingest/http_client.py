@@ -97,6 +97,7 @@ def fetch_url(
     expected_sha256: str | None = None,
     user_agent: str | None = None,
     extra_headers: dict[str, str] | None = None,
+    verify_tls: bool = True,
 ) -> dict:
     """Download `url` to `dest_dir`, honouring cache validators.
 
@@ -109,7 +110,7 @@ def fetch_url(
     check_url_allowed(url, s)
     host = urlparse(url).hostname or ""
     # effective delay: descriptor value vs robots.txt crawl-delay — larger wins
-    declared = robots_crawl_delay(url, s, user_agent)
+    declared = robots_crawl_delay(url, s, user_agent, verify_tls)
     delay = max(float(crawl_delay), declared or 0.0)
     _respect_delay(host, delay)
 
@@ -141,6 +142,7 @@ def fetch_url(
                 headers=headers,
                 follow_redirects=False,
                 timeout=s.fetch_timeout_seconds,
+                verify=verify_tls,
             ) as resp:
                 if resp.is_redirect and resp.headers.get("location"):
                     current = urljoin(current, resp.headers["location"])

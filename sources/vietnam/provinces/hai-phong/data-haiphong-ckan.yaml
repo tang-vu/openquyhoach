@@ -1,0 +1,43 @@
+key: vietnam/provinces/hai-phong/data-haiphong-ckan
+name: "Cổng dữ liệu TP Hải Phòng — tập dữ liệu quy hoạch"
+description: >
+  Official CKAN open-data portal of Thành phố Hải Phòng. Planning-relevant
+  datasets (quy hoạch, kế hoạch sử dụng đất) published by city departments —
+  primarily tabular document formats (XLSX/PDF). package_search is public;
+  resource downloads verified anonymously (verified 2026-09-19).
+authority: "Ủy ban nhân dân Thành phố Hải Phòng"
+jurisdiction: "Thành phố Hải Phòng"
+admin_codes:
+  province: "31"
+source_type: ckan
+base_url: "https://data.haiphong.gov.vn"
+homepage: "https://data.haiphong.gov.vn/"
+planning_types: [quy_hoach_su_dung_dat]
+priority: 50
+discovery:
+  package_query: "quy hoạch"
+  row_limit: 100
+  formats: [pdf, xlsx, csv, geojson, zip]
+allowed_formats: [pdf, xlsx, csv, zip, geojson]
+parser:
+  default_derivation_level: official_document
+refresh:
+  interval_seconds: 604800
+rate_limit:
+  max_concurrent: 1
+crawl_policy:
+  delay_seconds: 0.5
+  respect_robots: true
+  verify_tls: false   # incomplete cert chain on the gov host (verified 2026-09-19)
+rights:
+  redistribution_status: unknown
+  attribution: "UBND Thành phố Hải Phòng — Cổng dữ liệu"
+provenance:
+  prepared_by: "OpenQuyHoach maintainers"
+  verified_on: "2026-09-19"
+  evidence:
+    - "https://data.haiphong.gov.vn/api/3/action/package_search?q=quy+hoach"
+  notes: >
+    CKAN api/3 verified live; planning query returned the land-use planning
+    dataset by Sở NN&MT; XLSX resource download verified anonymously.
+enabled: true

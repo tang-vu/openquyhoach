@@ -116,11 +116,15 @@ class SqHktGridConnector:
         check_url_allowed(point_url)  # SSRF guard on the POST endpoint
 
         ua = (source.crawl_policy or {}).get("user_agent") or "OpenQuyHoach/0.1"
+        verify = bool((source.crawl_policy or {}).get("verify_tls", True))
         plans: dict[str, dict] = {}
         probed = 0
         lat = bbox[1]
         with httpx.Client(
-            headers={"User-Agent": ua}, timeout=30.0, follow_redirects=False
+            headers={"User-Agent": ua},
+            timeout=30.0,
+            follow_redirects=False,
+            verify=verify,
         ) as client:
             while lat <= bbox[3] + 1e-9:
                 lon = bbox[0]
@@ -213,6 +217,7 @@ class SqHktGridConnector:
             crawl_delay=float((source.crawl_policy or {}).get("delay_seconds", 0)),
             max_bytes=(source.rate_limit or {}).get("max_bytes"),
             user_agent=(source.crawl_policy or {}).get("user_agent"),
+            verify_tls=bool((source.crawl_policy or {}).get("verify_tls", True)),
         )
         if res.get("not_modified"):
             return FetchResult(

@@ -43,19 +43,35 @@ def _deny_all() -> urllib.robotparser.RobotFileParser:
     return rp
 
 
-def _load_parser(origin: str, settings: Settings) -> urllib.robotparser.RobotFileParser | None:
+def _load_parser(
+    origin: str, settings: Settings, verify_tls: bool = True
+) -> urllib.robotparser.RobotFileParser | None:
     now = time.monotonic()
-    cached = _cache.get(origin)
+    cache_key = (origin, verify_tls)
+    cached = _cache.get(cache_key)
     if cached and cached[0] > now:
         return cached[1]
     parser: urllib.robotparser.RobotFileParser | None
-    try:
-        resp = httpx.get(
-            f"{origin}/robots.txt",
-            headers={"User-Agent": settings.fetch_user_agent},
-            timeout=settings.fetch_timeout_seconds,
-            follow_redirects=True,
-        )
+    resp: httpx.Response | None = None
+    for attempt in range(3):
+        try:
+            resp = httpx.get(
+                f"{origin}/robots.txt",
+                headers={"User-Agent": settings.fetch_user_agent},
+                timeout=settings.fetch_timeout_seconds,
+                follow_redirects=True,
+                verify=verify_tls,
+            )
+            break
+        except Exception as exc:
+            log.info(
+                "robots.fetch_retry",
+                origin=origin,
+                attempt=attempt,
+                error=str(exc)[:160],
+            )
+            time.sleep(1.0 + attempt)
+    if resp is not None:
         status = resp.status_code
         if status in (401, 403) or status >= 500:
             parser = _deny_all()
@@ -69,15 +85,17 @@ def _load_parser(origin: str, settings: Settings) -> urllib.robotparser.RobotFil
                 parser = rp
             except Exception:
                 parser = None
-    except Exception as exc:
-        log.info("robots.unavailable", origin=origin, error=str(exc)[:200])
+    else:
         parser = _deny_all()
-    _cache[origin] = (now + _TTL, parser)
+    _cache[cache_key] = (now + _TTL, parser)
     return parser
 
 
 def robots_allowed(
-    url: str, settings: Settings | None = None, user_agent: str | None = None
+    url: str,
+    settings: Settings | None = None,
+    user_agent: str | None = None,
+    verify_tls: bool = True,
 ) -> bool:
     """True when robots.txt permits ``user_agent`` to fetch ``url``.
 
@@ -88,7 +106,7 @@ def robots_allowed(
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         return True
-    parser = _load_parser(_origin(url), s)
+    parser = _load_parser(_origin(url), s, verify_tls)
     if parser is None:
         return True
     try:
@@ -98,14 +116,17 @@ def robots_allowed(
 
 
 def crawl_delay(
-    url: str, settings: Settings | None = None, user_agent: str | None = None
+    url: str,
+    settings: Settings | None = None,
+    user_agent: str | None = None,
+    verify_tls: bool = True,
 ) -> float | None:
     """Server-declared crawl-delay for this origin, if any."""
     s = settings or get_settings()
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         return None
-    parser = _load_parser(_origin(url), s)
+    parser = _load_parser(_origin(url), s, verify_tls)
     if parser is None:
         return None
     try:

@@ -91,6 +91,33 @@ def test_transport_error_disallows():
     assert not robots.robots_allowed("https://example.com/page")
 
 
+@respx.mock
+def test_transient_error_retries_then_allows(monkeypatch):
+    """Flaky hosts get retried before deny-all — a single dropped
+    handshake must not mark a source failed."""
+    monkeypatch.setattr(robots.time, "sleep", lambda *_: None)
+    respx.get("https://example.com/robots.txt").mock(
+        side_effect=[
+            httpx.ConnectError("flaky handshake"),
+            httpx.Response(200, text="User-agent: *\nAllow: /"),
+        ]
+    )
+    assert robots.robots_allowed("https://example.com/page")
+    assert len(respx.calls) == 2
+
+
+@respx.mock
+def test_verify_tls_keys_separate_cache_entries():
+    """verify_tls=False and =True must not share a cached parser — a
+    verified-official host with a broken chain stays policy-scoped."""
+    respx.get("https://example.com/robots.txt").mock(
+        return_value=httpx.Response(404)
+    )
+    assert robots.robots_allowed("https://example.com/a", verify_tls=True)
+    assert robots.robots_allowed("https://example.com/a", verify_tls=False)
+    assert len(respx.calls) == 2  # second call was a cache miss
+
+
 def test_file_scheme_skips_robots():
     assert robots.robots_allowed("file:///fixtures/x.pdf")
     assert robots.crawl_delay("file:///fixtures/x.pdf") is None

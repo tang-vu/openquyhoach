@@ -228,6 +228,36 @@ def test_html_index_include_exclude_and_pagination():
     assert items[0].metadata["page_url"] == f"{HOST}/van-ban"
 
 
+@respx.mock
+def test_html_index_param_pagination_includes_index_page():
+    """param/path pagination must still scan the bare index page — the
+    first result page lives there, not only under ?page=N."""
+    def _dispatch(request):
+        if request.url.params.get("page") == "1":
+            return httpx.Response(200, text=PAGE2)
+        return httpx.Response(200, text=INDEX)
+
+    respx.get(f"{HOST}/van-ban").mock(side_effect=_dispatch)
+    conn = get_connector("html_index")
+    items = list(
+        conn.discover(
+            cfg(
+                "html_index",
+                discovery={
+                    "index_url": f"{HOST}/van-ban",
+                    "link_selector": "a",
+                    "include": "ApproveDecision/.*\\.pdf$",
+                    "pagination": {"style": "param", "param": "page", "start": 1, "max_pages": 5},
+                },
+                allowed_formats=["pdf"],
+            )
+        )
+    )
+    urls = [i.url for i in items]
+    assert f"{HOST}/Uploads/Document/ApproveDecision/1.pdf" in urls  # index page
+    assert f"{HOST}/Uploads/Document/ApproveDecision/3.pdf" in urls  # ?page=1
+
+
 # --- ogc wfs typename filter ---------------------------------------------
 
 WFS_CAPS = """<?xml version="1.0"?>

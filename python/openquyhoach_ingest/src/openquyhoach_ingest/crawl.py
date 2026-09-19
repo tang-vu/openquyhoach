@@ -299,9 +299,10 @@ def _run_cycle(
     policy = cfg.crawl_policy or {}
     respect = bool(policy.get("respect_robots", True))
     ua = policy.get("user_agent")
+    verify_tls = bool(policy.get("verify_tls", True))
     discovery_urls = (cfg.discovery or {}).get("urls") or []
     gate_url = cfg.base_url or (discovery_urls[0] if discovery_urls else None)
-    if respect and gate_url and not robots_allowed(gate_url, settings, ua):
+    if respect and gate_url and not robots_allowed(gate_url, settings, ua, verify_tls):
         s.add(
             SourceObservation(
                 source_id=source.id,
@@ -410,7 +411,10 @@ def _fetch_one(
         source_id=source.id, run_id=run.id, resource_id=res.id, detail={"url": item.url}
     )
     if respect_robots and not robots_allowed(
-        item.url, settings, (cfg.crawl_policy or {}).get("user_agent")
+        item.url,
+        settings,
+        (cfg.crawl_policy or {}).get("user_agent"),
+        bool((cfg.crawl_policy or {}).get("verify_tls", True)),
     ):
         obs.outcome = ObservationOutcome.BLOCKED.value
         obs.detail = {"url": item.url, "reason": "robots_disallow"}

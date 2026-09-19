@@ -1,0 +1,43 @@
+key: vietnam/provinces/can-tho/data-cantho-ckan
+name: "Cổng dữ liệu TP Cần Thơ — tập dữ liệu quy hoạch"
+description: >
+  Official CKAN open-data portal of Thành phố Cần Thơ. Planning datasets
+  (quy hoạch / kế hoạch sử dụng đất) as XLSX/PDF documents.
+  package_search is public; downloads verified anonymously (2026-09-19).
+  Note: gis.cantho.gov.vn ArcGIS hosts only sample services — no real
+  planning layers found.
+authority: "Ủy ban nhân dân Thành phố Cần Thơ"
+jurisdiction: "Thành phố Cần Thơ"
+admin_codes:
+  province: "92"
+source_type: ckan
+base_url: "https://data.cantho.gov.vn"
+homepage: "https://data.cantho.gov.vn/"
+planning_types: [quy_hoach_su_dung_dat]
+priority: 50
+discovery:
+  package_query: "quy hoạch"
+  row_limit: 100
+  formats: [pdf, xlsx, csv, geojson, zip, txt]
+allowed_formats: [pdf, xlsx, csv, zip, geojson, txt]
+parser:
+  default_derivation_level: official_document
+refresh:
+  interval_seconds: 604800
+rate_limit:
+  max_concurrent: 1
+crawl_policy:
+  delay_seconds: 0.5
+  respect_robots: true
+rights:
+  redistribution_status: unknown
+  attribution: "UBND Thành phố Cần Thơ — Cổng dữ liệu"
+provenance:
+  prepared_by: "OpenQuyHoach maintainers"
+  verified_on: "2026-09-19"
+  evidence:
+    - "https://data.cantho.gov.vn/api/3/action/package_search?q=quy+hoach"
+  notes: >
+    CKAN api/3 verified live; planning datasets' PDF/XLSX resources
+    verified anonymously downloadable.
+enabled: true

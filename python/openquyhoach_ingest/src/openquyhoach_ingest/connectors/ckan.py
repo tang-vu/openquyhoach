@@ -34,7 +34,13 @@ class CkanConnector:
     def _api(self, source: SourceConfig, action: str, params: dict) -> dict:
         base = (source.base_url or "").rstrip("/")
         ua = source.crawl_policy.get("user_agent")
-        data = get_json(f"{base}/api/3/action/{action}", params=params, user_agent=ua)
+        verify = bool(source.crawl_policy.get("verify_tls", True))
+        data = get_json(
+            f"{base}/api/3/action/{action}",
+            params=params,
+            user_agent=ua,
+            verify_tls=verify,
+        )
         if not data.get("success"):
             raise RuntimeError(f"CKAN {action} failed: {data.get('error')}")
         return data["result"]

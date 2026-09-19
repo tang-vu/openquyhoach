@@ -1,0 +1,53 @@
+key: vietnam/provinces/an-giang/sxd-quy-hoach-de-an-ttcb
+name: "Sở Xây dựng An Giang — quy hoạch, đề án TTCB (quyết định PDF)"
+description: >
+  'Quy hoạch, đề án TTCB' announcement index on the official Sở Xây dựng
+  tỉnh An Giang portal (.gov.vn, Drupal) — master-plan / sectoral scheme
+  approval decisions as linked PDFs. Covers the post-2025 merged province
+  including former Kiên Giang.
+authority: "Sở Xây dựng tỉnh An Giang"
+jurisdiction: "Tỉnh An Giang"
+admin_codes:
+  province: "89"
+source_type: html_index
+base_url: "https://sxd.angiang.gov.vn"
+homepage: "https://sxd.angiang.gov.vn/quy-hoach-de-an-ttcb"
+planning_types: [quy_hoach_chung, van_ban_phap_luat]
+priority: 30
+discovery:
+  index_url: "https://sxd.angiang.gov.vn/quy-hoach-de-an-ttcb"
+  link_selector: 'a[rel="bookmark"]'
+  detail:
+    enabled: true
+    file_selector: 'a[href*=".pdf"], a[href*=".PDF"]'
+  pagination:
+    style: param
+    param: page
+    start: 1
+    max_pages: 30
+  max_resources: 400
+allowed_formats: [pdf]
+parser:
+  default_derivation_level: official_document
+  default_dataset_group: hoso_gis
+refresh:
+  interval_seconds: 604800
+rate_limit:
+  max_concurrent: 1
+  max_requests_per_run: 200
+  max_bytes: 134217728
+crawl_policy:
+  delay_seconds: 1.0
+  max_requests: 300
+  respect_robots: true
+rights:
+  redistribution_status: unknown
+  attribution: "Sở Xây dựng tỉnh An Giang"
+provenance:
+  prepared_by: "OpenQuyHoach maintainers"
+  verified_on: "2026-09-19"
+  evidence:
+    - "https://sxd.angiang.gov.vn/quy-hoach-de-an-ttcb"
+  notes: >
+    Verified 2026-09-19 alongside the phan-khu section — same Drupal
+    structure, ?page=N pagination, first-PDF-per-article limitation.

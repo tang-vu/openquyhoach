@@ -85,6 +85,7 @@ class HtmlConnector:
             return
         from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+        yield index_url, self._get_html(index_url, delay)
         for n in range(start, start + max_pages):
             if style == "path" and path_template:
                 url = urljoin(index_url, path_template.replace("{page}", str(n)))

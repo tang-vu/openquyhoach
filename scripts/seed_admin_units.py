@@ -58,6 +58,23 @@ UNITS = [
         "this row is the pre-merge unit referenced by current layers.",
     ),
     (
+        "31",
+        "Thành phố Hải Phòng",
+        "province",
+        None,
+        None,
+        "GSO mã tỉnh 31 — post-2025 expanded city (merged Hải Dương).",
+    ),
+    (
+        "92",
+        "Thành phố Cần Thơ",
+        "province",
+        None,
+        None,
+        "GSO mã tỉnh 92 — post-2025 expanded city (merged Sóc Trăng, "
+        "Hậu Giang).",
+    ),
+    (
         "72",
         "Tỉnh Tây Ninh",
         "province",
@@ -66,6 +83,16 @@ UNITS = [
         "GSO mã tỉnh 72 — merged with Long An in the 2025 "
         "reorganisation (new Tây Ninh province effective 2025-07-01); "
         "this row is the pre-merge unit referenced by current layers.",
+    ),
+    (
+        "89",
+        "Tỉnh An Giang",
+        "province",
+        None,
+        None,
+        "Mã cấp 1 theo QĐ 09/2025/QĐ-TTg — tỉnh An Giang mới "
+        "(sáp nhập Kiên Giang, hiệu lực 2025-07-01) giữ mã 89 của "
+        "tỉnh trùng tên; mã 91 của Kiên Giang đóng.",
     ),
 ]
 

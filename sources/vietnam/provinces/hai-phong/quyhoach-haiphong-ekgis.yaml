@@ -1,0 +1,77 @@
+key: vietnam/provinces/hai-phong/quyhoach-haiphong-ekgis
+name: "Sở Xây dựng Hải Phòng — cổng tra cứu quy hoạch đô thị và nông thôn"
+description: >
+  Official planning lookup portal quyhoach.haiphong.gov.vn (eKGIS stack,
+  operated for Sở Xây dựng TP Hải Phòng). The API exposes no bulk plan
+  list; plans are enumerated by grid-sampling
+  LayThongTinQuyHoachTheoViTri?lng&lat over the city extent — the response
+  carries doanquyhoach records (plan boundary WKT + official metadata:
+  tenDoAn, soQDQH, ngayQDQH, coQuanPheduyet, dienTichQH, trangThaiDoAn).
+  Each unique plan (maHoSo/maLienKet) is then fetched authoritatively via
+  LayThongTinDoAnTheoMa. The service also returns zoning cells
+  (oquyhoach/ochucnangsudungdat) at each sample point — not harvested:
+  cells are too small for grid enumeration.
+authority: "Sở Xây dựng Thành phố Hải Phòng"
+jurisdiction: "Thành phố Hải Phòng"
+admin_codes:
+  province: "31"
+source_type: ekgis_grid
+base_url: "https://quyhoach.haiphong.gov.vn"
+homepage: "https://quyhoach.haiphong.gov.vn/"
+planning_types: [quy_hoach_chung, quy_hoach_phan_khu, quy_hoach_chi_tiet]
+priority: 15
+discovery:
+  # city extent incl. Cát Bà/Bạch Long Vĩ islands (~107.7E, 20.1N)
+  bbox: [106.5, 20.0, 107.9, 21.1]
+  grid_step: 0.02
+  point_endpoint: "/QuyHoachServices/rest/QuyHoach/gsv_data/haiphongsxd/qhxd_tt16_bxd/LayThongTinQuyHoachTheoViTri"
+  detail_endpoint: "/QuyHoachServices/rest/QuyHoach/gsv_data/haiphongsxd/qhxd_tt16_bxd/LayThongTinDoAnTheoMa?maDoAn={ma}"
+  id_fields: [maHoSo, maLienKet, maThongTinQH]
+  response_array: doanquyhoach
+  max_resources: 400
+allowed_formats: [geojson]
+parser:
+  default_derivation_level: official_vector
+  default_dataset_group: moc_gioi
+  layer_map_aliases:
+    ekgis: ranh_do_an
+  layer_map:
+    ranh_do_an:
+      canonical_name: "Ranh đồ án quy hoạch"
+      thematic_group: plan_boundary
+      derivation_level: official_vector
+      dataset_group: moc_gioi
+refresh:
+  interval_seconds: 1209600
+rate_limit:
+  max_concurrent: 1
+  max_bytes: 52428800
+crawl_policy:
+  delay_seconds: 0.4
+  respect_robots: true
+  verify_tls: false   # gov IIS serves an incomplete cert chain (verified 2026-09-19)
+rights:
+  redistribution_status: unknown
+  attribution: "Sở Xây dựng Thành phố Hải Phòng"
+  access_notes: >
+    Public REST API serving the authority's own lookup portal; no
+    robots.txt restrictions observed (verified 2026-09-19). No explicit
+    licence published — stored and exposed conservatively.
+  notes: >
+    Field values (tenDoAn, soQDQH, ngayQDQH, coQuanPheduyet, dienTichQH)
+    are verbatim copies from the authority's API — deterministic
+    derivation, not machine extraction.
+provenance:
+  prepared_by: "OpenQuyHoach maintainers"
+  verified_on: "2026-09-19"
+  evidence:
+    - "https://quyhoach.haiphong.gov.vn/"
+    - "https://quyhoach.haiphong.gov.vn/assets/appconfig.json"
+    - "https://quyhoach.haiphong.gov.vn/QuyHoachServices/rest/QuyHoach/gsv_data/haiphongsxd/qhxd_tt16_bxd/LayThongTinQuyHoachTheoViTri?lng=106.688&lat=20.865"
+  notes: >
+    Endpoint behaviour verified by direct probing 2026-09-19: point
+    lookup returns doanquyhoach records with WKT MULTIPOLYGON boundary
+    and official metadata (e.g. maHoSo HP-QHCTP-DC23 = Điều chỉnh QHC TP
+    Hải Phòng đến 2040, QĐ 323/QĐ-TTg, Thủ tướng chính phủ);
+    LayThongTinDoAnTheoMa returns the authoritative per-plan record.
+enabled: true

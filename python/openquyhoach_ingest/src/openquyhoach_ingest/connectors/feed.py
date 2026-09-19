@@ -46,7 +46,8 @@ class FeedConnector:
         url = source.discovery.get("feed_url") or source.base_url
         if not url:
             return
-        root = get_xml(url)
+        verify = bool(source.crawl_policy.get("verify_tls", True))
+        root = get_xml(url, verify_tls=verify)
         root_tag = _local(root.tag)
         if root_tag == "rss" or root_tag == "channel":
             items = (e for e in root.iter() if _local(e.tag) == "item")

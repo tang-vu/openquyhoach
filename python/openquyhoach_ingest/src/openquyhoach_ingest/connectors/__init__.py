@@ -5,6 +5,7 @@ discover/fetch/inspect; normalize+emit happen in the pipeline."""
 from . import (
     arcgis_rest,  # noqa: F401
     ckan,  # noqa: F401
+    ekgis_grid,  # noqa: F401
     feed,  # noqa: F401
     file,  # noqa: F401
     html,  # noqa: F401

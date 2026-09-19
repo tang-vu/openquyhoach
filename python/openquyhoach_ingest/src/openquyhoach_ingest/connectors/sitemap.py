@@ -46,7 +46,7 @@ class SitemapConnector:
         origin = f"{urlparse(base).scheme}://{urlparse(base).netloc}"
         found: list[str] = []
         try:
-            robots = get_text(f"{origin}/robots.txt")
+            robots = get_text(f"{origin}/robots.txt", verify_tls=self._verify)
             for line in robots.splitlines():
                 if line.lower().startswith("sitemap:"):
                     found.append(line.split(":", 1)[1].strip())
@@ -60,7 +60,7 @@ class SitemapConnector:
         seen.add(url)
         budget[0] -= 1
         try:
-            root = get_xml(url)
+            root = get_xml(url, verify_tls=self._verify)
         except Exception:
             return
         tag = root.tag.rsplit("}", 1)[-1]
@@ -84,6 +84,7 @@ class SitemapConnector:
                     yield loc.strip(), (lastmod or "").strip() or None
 
     def discover(self, source: SourceConfig) -> Iterable[DiscoveredItem]:
+        self._verify = bool(source.crawl_policy.get("verify_tls", True))
         d = source.discovery
         include = [re.compile(p) for p in _patterns(d, "include", "url_include")]
         exclude = [re.compile(p) for p in _patterns(d, "exclude", "url_exclude")]

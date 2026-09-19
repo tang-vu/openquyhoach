@@ -32,7 +32,7 @@
       "enum": [
         "file", "http", "html_index", "sitemap", "feed", "ckan",
         "arcgis_rest", "ogc_wms", "ogc_wfs", "ogc_api_features",
-        "planning_portal", "document_repository", "sqhkt_grid"
+        "planning_portal", "document_repository", "sqhkt_grid", "ekgis_grid"
       ]
     },
     "base_url": {"type": "string", "description": "https:// or file:// base"},
@@ -176,6 +176,7 @@
         "delay_seconds": {"type": "number", "minimum": 0},
         "max_requests": {"type": "integer", "minimum": 1},
         "respect_robots": {"type": "boolean", "default": true},
+        "verify_tls": {"type": "boolean", "default": true, "description": "set false only for verified official hosts with broken/incomplete certificate chains"},
         "user_agent": {"type": "string", "description": "source-specific UA override (rare)"},
         "notes": {"type": "string"}
       }

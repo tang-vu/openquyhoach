@@ -37,7 +37,8 @@ class OgcApiFeaturesConnector:
 
     def discover(self, source: SourceConfig) -> Iterable[DiscoveredItem]:
         ua = source.crawl_policy.get("user_agent")
-        data = get_json(self._collections_url(source), user_agent=ua)
+        verify = bool(source.crawl_policy.get("verify_tls", True))
+        data = get_json(self._collections_url(source), user_agent=ua, verify_tls=verify)
         allow = set(source.discovery.get("collections") or [])
         cap = int(source.discovery.get("max_resources") or 500)
         emitted = 0
@@ -71,11 +72,12 @@ class OgcApiFeaturesConnector:
         limit = int(source.discovery.get("page_limit") or 1000)
         max_features = int(source.discovery.get("max_features") or 50000)
         ua = source.crawl_policy.get("user_agent")
+        verify = bool(source.crawl_policy.get("verify_tls", True))
         features: list[dict] = []
         url: str | None = item.url
         params: dict | None = {"limit": limit, "f": "json"}
         while url and len(features) < max_features:
-            data = get_json(url, params=params, user_agent=ua)
+            data = get_json(url, params=params, user_agent=ua, verify_tls=verify)
             batch = data.get("features") or []
             features.extend(batch)
             params = None  # next links carry their own query

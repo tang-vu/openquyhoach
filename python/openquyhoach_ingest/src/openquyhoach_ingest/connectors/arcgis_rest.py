@@ -34,18 +34,24 @@ def _query(c: httpx.Client, url: str, params: dict) -> dict:
 class ArcgisRestConnector:
     source_type = "arcgis_rest"
 
-    def _client(self) -> httpx.Client:
+    def _client(self, source: SourceConfig | None = None) -> httpx.Client:
         s = get_settings()
+        verify = True
+        if source is not None:
+            verify = bool((source.crawl_policy or {}).get("verify_tls", True))
         return httpx.Client(
             headers={"User-Agent": s.fetch_user_agent},
             timeout=s.fetch_timeout_seconds,
             follow_redirects=True,
+            verify=verify,
         )
 
-    def _json(self, url: str, params: dict | None = None) -> dict:
+    def _json(
+        self, url: str, params: dict | None = None, source: SourceConfig | None = None
+    ) -> dict:
         check_url_allowed(url)
         q = {"f": "json", **(params or {})}
-        with self._client() as c:
+        with self._client(source) as c:
             resp = c.get(url, params=q)
             resp.raise_for_status()
         data = resp.json()
@@ -73,12 +79,12 @@ class ArcgisRestConnector:
         max_items = int(source.discovery.get("max_resources") or 5000)
         emitted = 0
         for base in bases:
-            svc = self._json(base)
+            svc = self._json(base, source=source)
             for layer in svc.get("layers", []):
                 if emitted >= max_items:
                     return
                 lid = layer["id"]
-                meta = self._json(f"{base}/{lid}")
+                meta = self._json(f"{base}/{lid}", source=source)
                 lname = meta.get("name") or f"layer_{lid}"
                 if include and not any(p.search(lname) for p in include):
                     continue
@@ -111,7 +117,9 @@ class ArcgisRestConnector:
                     },
                 )
 
-    def _offset_pages(self, c: httpx.Client, url: str, page: int) -> list:
+    def _offset_pages(
+        self, c: httpx.Client, url: str, page: int, source: SourceConfig
+    ) -> list:
         """Standard resultOffset paging; falls back to OID-range paging on
         pre-10.3 servers that reject the pagination params."""
         features: list = []
@@ -134,17 +142,24 @@ class ArcgisRestConnector:
                 offset += page
         except RuntimeError as exc:
             if "Pagination is not supported" in str(exc):
-                return self._oid_pages(c, url, page, None)
+                return self._oid_pages(c, url, page, None, source)
             raise
         return features
 
-    def _oid_pages(self, c: httpx.Client, url: str, page: int, oid_field: str | None) -> list:
+    def _oid_pages(
+        self,
+        c: httpx.Client,
+        url: str,
+        page: int,
+        oid_field: str | None,
+        source: SourceConfig,
+    ) -> list:
         """Page via `where OID > last` — works on servers without any
         pagination support. ``resultRecordCount``/``orderByFields`` are
         dropped on servers that reject them; the server's implicit cap is
         learned from the first uncounted batch."""
         if not oid_field:
-            lmeta = self._json(url.rsplit("/query", 1)[0])
+            lmeta = self._json(url.rsplit("/query", 1)[0], source=source)
             oid_field = next(
                 (f["name"] for f in (lmeta.get("fields") or [])
                  if f.get("type") == "esriFieldTypeOID"),
@@ -202,7 +217,7 @@ class ArcgisRestConnector:
         meta = item.metadata or {}
         page = min(2000, int(meta.get("max_record_count") or 2000))
         features: list = []
-        with self._client() as c:
+        with self._client(source) as c:
             try:
                 server_count = _query(c, item.url, {
                     "where": "1=1", "returnCountOnly": "true", "f": "json",
@@ -210,9 +225,11 @@ class ArcgisRestConnector:
             except Exception:
                 server_count = None
             if meta.get("supports_pagination", True):
-                features.extend(self._offset_pages(c, item.url, page))
+                features.extend(self._offset_pages(c, item.url, page, source))
             elif meta.get("oid_field"):
-                features.extend(self._oid_pages(c, item.url, page, meta["oid_field"]))
+                features.extend(
+                    self._oid_pages(c, item.url, page, meta["oid_field"], source)
+                )
             else:
                 data = _query(c, item.url, {
                     "where": "1=1", "outFields": "*",
