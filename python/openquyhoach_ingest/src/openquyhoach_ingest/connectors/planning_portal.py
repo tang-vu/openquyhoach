@@ -97,6 +97,7 @@ class PlanningPortalConnector:
             crawl_delay=float(source.crawl_policy.get("delay_seconds", 2.0)),
             max_bytes=(source.rate_limit or {}).get("max_bytes"),
             user_agent=source.crawl_policy.get("user_agent"),
+            verify_tls=bool(source.crawl_policy.get("verify_tls", True)),
         )
         if res.get("not_modified"):
             return FetchResult(

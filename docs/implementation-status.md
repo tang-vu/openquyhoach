@@ -117,6 +117,32 @@ run in this repo (WSL: `.venv/bin/python3.14 -m pytest`, docker infra via
 - `vietnam/provinces/tay-ninh/gis-tayninh-geoserver-wfs` — provincial
   GeoServer WFS: 38 planning typenames (QHSDD cấp tỉnh + Long An district
   plans, sector plans, boundaries) → official_vector, published.
+- `vietnam/provinces/hai-phong/quyhoach-haiphong-ekgis` — official
+  `quyhoach.haiphong.gov.vn` eKGIS point-lookup (`new ekgis_grid`
+  connector): grid-samples `LayThongTinQuyHoachTheoViTri` city-wide,
+  dedupes plans by maHoSo/maLienKet, fetches authoritative detail via
+  `LayThongTinDoAnTheoMa`. `verify_tls: false` — the gov IIS serves an
+  incomplete cert chain (verified; documented in descriptor).
+  **82 plans ingested (incl. former Hải Dương post-2025 merger), all
+  82 versions published** — real titles/QĐ via planning_hints.
+- `vietnam/provinces/hai-phong/data-haiphong-ckan` +
+  `vietnam/provinces/can-tho/data-cantho-ckan` — official open-data
+  CKAN catalogs; planning datasets (QHSDD land-use extracts XLSX/PDF).
+- `vietnam/provinces/an-giang/sxd-quy-hoach-{phan-khu,kien-truc}` —
+  Sở Xây dựng An Giang (.gov.vn, Drupal) announcement indexes →
+  31 + 11 approval-decision PDFs via detail-page follow, 0 errors.
+  Covers the post-2025 merged province incl. former Kiên Giang
+  (Phú Quốc, Rạch Giá). `de-an-ttcb` section confirmed empty upstream
+  (page renders "Không có" — not a connector bug).
+- `vietnam/national/congbao-chinhphu-qd-ttg` — official national
+  gazette QĐ-TTg index → signed decision PDFs on congbaocdn/
+  g7.cdnchinhphu.vn. `title_include` restricts discovery to planning
+  QĐs: **269 docs ingested incl. 60 "phê duyệt Quy hoạch tỉnh/thành
+  phố" approvals (2022–2024 wave, tầm nhìn 2050)** — among them
+  Hà Nam 1686/QĐ-TTg and Ninh Bình 218/QĐ-TTg, so both provinces now
+  have their provincial plan as a signed official PDF even though
+  their own portals are dead/auth-walled. `verify_tls: false` — CDN
+  ships an incomplete cert chain (verified 2026-09-19).
 
 **Connector/ingestor fixes from provincial expansion**
 
@@ -130,6 +156,25 @@ run in this repo (WSL: `.venv/bin/python3.14 -m pytest`, docker infra via
   (Postgres JSONB rejects the `NaN` token — crashed real Tây Ninh ingest).
 - Z-dimension geometries forced to 2D for the canonical column
   (Z preserved losslessly in `source_geometry_ewkb`).
+- `crawl_policy.verify_tls` — descriptor-scoped TLS opt-out threaded
+  through robots, http_client, ckan, sitemap, feed, ogc_api, html
+  (discovery + fetch), planning_portal, ekgis_grid, sqhkt_grid,
+  arcgis_rest. For verified-official hosts whose IIS/CDN ships an
+  incomplete certificate chain (quyhoach.haiphong, data.haiphong,
+  g7.cdnchinhphu).
+- file:// items honor `suggested_filename` for the fetch copy — random
+  temp names previously leaked into dataset/layer names (82 Hải Phòng
+  datasets renamed to `ekgis_{maHoSo}` post-hoc).
+- html connector emits listing anchor text as `metadata.title` +
+  `article_url`; `_ingest_pdf` prefers it over CDN filenames
+  (110 congbao docs re-titled from "Q_-TTg.pdf" to real decision titles).
+- robots.txt fetch retries transient transport errors (3 attempts,
+  backoff) before deny-all — flaky gov IIS stalls no longer fail runs.
+- html_index param/path pagination now yields the bare index page first —
+  `start` previously skipped page 0/1 entirely (vqh +52 docs on re-sync).
+- `ekgis_grid` connector: grid point-lookup enumeration for the eKGIS
+  portal family; all-requests-failed sweeps raise instead of reporting
+  a clean empty result.
 
 **Tests added (39 new)**
 - Unit: robots policies + UA-group precedence; http client (conditional,
@@ -166,10 +211,22 @@ run in this repo (WSL: `.venv/bin/python3.14 -m pytest`, docker infra via
   remaining scans still `needs_ocr`.
 - Most provincial `.gov.vn` GIS hosts were unreachable from the dev
   network during discovery (geo-blocking/hosting); verified reachable +
-  onboarded: TP.HCM, Hà Nội, Khánh Hòa, Tây Ninh. Candidates found but
-  not onboarded: gis.cantho.gov.vn (only sample services), gis.hatinh
-  (SPA + token API), gis.ninhbinh (auth-walled), Đà Nẵng congdulieu.vn
-  (ZK app — no REST API), qhkhsdd.hanoi.gov.vn (unreachable).
+  onboarded: TP.HCM, Hà Nội, Khánh Hòa, Tây Ninh, Hải Phòng, Cần Thơ,
+  An Giang. Candidates found but not onboarded: gis.cantho.gov.vn (only
+  sample services), gis.hatinh (SPA + token API), Đà Nẵng congdulieu.vn
+  (ZK app — no REST API), qhkhsdd.hanoi.gov.vn (eKGIS parcels —
+  metre-scale, not grid-enumerable), quyhoach.hanoi.gov.vn (official
+  trial planning system — `/map/all/public` lists "QHSDĐ QHC 100 năm"
+  but feature export + planning tiles are auth-walled/empty),
+  congbao.{angiang,sonla,tayninh} (bound-issue gazette PDFs — need
+  per-decision segmentation), opendata.angiang (downloads login-walled).
+- Hà Nam: no usable provincial source — sxd.hanam.gov.vn deactivated
+  (NotActive.htm), stnmt.hanam.gov.vn unreachable, hanam.gov.vn serves
+  error shell. The provincial plan itself is covered via the national
+  gazette source: QĐ 1686/QĐ-TTg (2023, tầm nhìn 2050) on
+  congbao.chinhphu.vn.
+- Ninh Bình: gis.ninhbinh auth-walled, sxd.ninhbinh internal-only,
+  data.ninhbinh SPA with 404 API endpoints (partially deployed).
 - Tây Ninh WFS `max_features: 8000` caps 3 large layers (qhsdd_duchoa,
   quyhoach1, A05_QuyHoachTaiNguyenNuoc) — raise cap or page server-side
   when full coverage needed.

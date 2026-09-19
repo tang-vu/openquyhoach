@@ -564,10 +564,8 @@ def _ingest_pdf(
         version = resolve_planning_version(session, source_cfg, artifact, hints)
 
     planning = (source_cfg.meta.get("planning") if source_cfg else None) or {}
-    disc = (
-        (artifact.meta or {}).get("discovered_metadata", {}).get("planning_hints")
-        or {}
-    )
+    discovered = (artifact.meta or {}).get("discovered_metadata", {})
+    disc = discovered.get("planning_hints") or {}
     c = info.candidate_codes
     field_origins: dict[str, str] = {}
 
@@ -586,11 +584,16 @@ def _ingest_pdf(
                 else MetadataOrigin.DERIVED_DETERMINISTIC.value
             )
         )
-    title = info.metadata.get("Title") or planning.get("title") or artifact.filename
+    title = (
+        info.metadata.get("Title")
+        or planning.get("title")
+        or discovered.get("title")
+        or artifact.filename
+    )
     if title:
         field_origins["title"] = (
             MetadataOrigin.DERIVED_DETERMINISTIC.value
-            if info.metadata.get("Title")
+            if info.metadata.get("Title") or discovered.get("title")
             else MetadataOrigin.OFFICIAL_EXPLICIT.value
         )
     signed = _parse_date(c.get("signed_date")) or _parse_date(disc.get("approval_date"))

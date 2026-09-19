@@ -304,9 +304,12 @@ class EkgisGridConnector:
 
             src = Path(item.url.replace("file://", ""))
             workdir.mkdir(parents=True, exist_ok=True)
-            tmp = Path(
-                tempfile.mkstemp(dir=workdir, prefix="ekgis-", suffix=".geojson")[1]
-            )
+            if item.suggested_filename:
+                tmp = workdir / Path(item.suggested_filename).name
+            else:
+                tmp = Path(
+                    tempfile.mkstemp(dir=workdir, prefix="ekgis-", suffix=".geojson")[1]
+                )
             shutil.copyfile(src, tmp)
             sha, size = sha256_file(tmp)
             return FetchResult(

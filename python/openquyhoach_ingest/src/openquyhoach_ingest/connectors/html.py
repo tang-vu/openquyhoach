@@ -32,22 +32,38 @@ from .base import DiscoveredItem, FetchResult, SourceConfig, register
 from .common import _patterns
 
 
+def _matches(url: str, anchor: str, filters: tuple) -> bool:
+    """URL + anchor-text gate. include/exclude match the listing link —
+    with detail follow enabled the final URL is a file/CDN link whose
+    name bears no relation to the article slug. title_* match the anchor
+    text, saving the detail-page request for non-matching articles."""
+    include, exclude, title_inc, title_exc = filters
+    if include and not any(p.search(url) for p in include):
+        return False
+    if any(p.search(url) for p in exclude):
+        return False
+    if title_inc and not any(p.search(anchor) for p in title_inc):
+        return False
+    return not any(p.search(anchor) for p in title_exc)
+
+
 class HtmlConnector:
     source_type = "html_index"
 
-    def _get_html(self, url: str, delay: float) -> BeautifulSoup:
+    def _get_html(self, url: str, delay: float, verify_tls: bool = True) -> BeautifulSoup:
         s = get_settings()
         check_url_allowed(url, s)
         with httpx.Client(
             headers={"User-Agent": s.fetch_user_agent},
             timeout=s.fetch_timeout_seconds,
             follow_redirects=True,
+            verify=verify_tls,
         ) as client:
             resp = client.get(url)
             resp.raise_for_status()
         return BeautifulSoup(resp.text, "lxml")
 
-    def _pages(self, index_url: str, d: dict, delay: float) -> Iterable[tuple[str, BeautifulSoup]]:
+    def _pages(self, index_url: str, d: dict, delay: float, verify_tls: bool = True) -> Iterable[tuple[str, BeautifulSoup]]:
         """Yield (page_url, soup) — single page, or paginated when
         ``discovery.pagination`` is configured. Schema styles:
 
@@ -65,7 +81,7 @@ class HtmlConnector:
         if not style:
             style = "next_link" if next_sel else ("param" if page_param else ("path" if path_template else None))
         if not style:
-            yield index_url, self._get_html(index_url, delay)
+            yield index_url, self._get_html(index_url, delay, verify_tls)
             return
         link_sel = d.get("link_selector", "a")
         max_pages = int(pag.get("max_pages") or d.get("max_pages") or 50)
@@ -77,7 +93,7 @@ class HtmlConnector:
             while url and pages < max_pages and url not in seen:
                 seen.add(url)
                 pages += 1
-                soup = self._get_html(url, delay)
+                soup = self._get_html(url, delay, verify_tls)
                 yield url, soup
                 nxt = soup.select_one(next_sel) if next_sel else None
                 href = nxt.get("href") if nxt else None
@@ -85,7 +101,7 @@ class HtmlConnector:
             return
         from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-        yield index_url, self._get_html(index_url, delay)
+        yield index_url, self._get_html(index_url, delay, verify_tls)
         for n in range(start, start + max_pages):
             if style == "path" and path_template:
                 url = urljoin(index_url, path_template.replace("{page}", str(n)))
@@ -94,7 +110,7 @@ class HtmlConnector:
                 q = dict(parse_qsl(parts.query))
                 q[page_param or "page"] = str(n)
                 url = urlunparse(parts._replace(query=urlencode(q)))
-            soup = self._get_html(url, delay)
+            soup = self._get_html(url, delay, verify_tls)
             yield url, soup
             if not soup.select(link_sel):
                 break  # empty page — stop paginating
@@ -112,13 +128,18 @@ class HtmlConnector:
         field_selectors = d.get("field_selectors") or {}
         detail = d.get("detail") or d.get("follow") or {}
         allowed = set(source.allowed_formats or [])
-        include = [re.compile(p) for p in _patterns(d, "include", "url_include")]
-        exclude = [re.compile(p) for p in _patterns(d, "exclude", "url_exclude")]
+        filters = (
+            [re.compile(p) for p in _patterns(d, "include", "url_include")],
+            [re.compile(p) for p in _patterns(d, "exclude", "url_exclude")],
+            [re.compile(p) for p in _patterns(d, "title_include", "title_includes")],
+            [re.compile(p) for p in _patterns(d, "title_exclude", "title_excludes")],
+        )
         max_items = int(d.get("max_resources") or 5000)
         seen_urls: set[str] = set()
         emitted = 0
 
-        for page_url, soup in self._pages(index_url, d, delay):
+        verify_tls = bool(source.crawl_policy.get("verify_tls", True))
+        for page_url, soup in self._pages(index_url, d, delay, verify_tls):
             for el in soup.select(link_sel):
                 if emitted >= max_items:
                     return
@@ -129,12 +150,18 @@ class HtmlConnector:
                     continue
                 url = urljoin(page_url, str(href))
                 meta = {}
+                anchor_text = el.get_text(strip=True)
+                if anchor_text:
+                    meta["title"] = anchor_text
                 for field_name, sel in field_selectors.items():
                     sub = el.select_one(sel)
                     if sub is not None:
                         meta[field_name] = sub.get_text(strip=True)
+                if not _matches(url, meta.get("title") or "", filters):
+                    continue
                 if detail.get("enabled"):
-                    detail_soup = self._get_html(url, delay)
+                    meta["article_url"] = url
+                    detail_soup = self._get_html(url, delay, verify_tls)
                     file_sel = detail.get("file_selector", "a")
                     fe = detail_soup.select_one(file_sel)
                     fe_href = fe.get("href") if fe else None
@@ -144,10 +171,6 @@ class HtmlConnector:
                         continue
                     url = urljoin(url, str(fe_href))
                 if allowed and not any(url.lower().endswith(f".{ext}") for ext in allowed):
-                    continue
-                if include and not any(p.search(url) for p in include):
-                    continue
-                if any(p.search(url) for p in exclude):
                     continue
                 if url in seen_urls:
                     continue
@@ -168,6 +191,7 @@ class HtmlConnector:
             crawl_delay=float(source.crawl_policy.get("delay_seconds", 1.0)),
             max_bytes=(source.rate_limit or {}).get("max_bytes"),
             user_agent=source.crawl_policy.get("user_agent"),
+            verify_tls=bool(source.crawl_policy.get("verify_tls", True)),
         )
         if res.get("not_modified"):
             return FetchResult(

@@ -99,7 +99,7 @@ Validate: `openquyhoach sources validate`.
 |---|---|---|
 | `file` | local dir globs | `path`, `globs` |
 | `http` | explicit URL list | `urls`, optional `filename` |
-| `html` | links on a listing page | `follow` (CSS selector), `include`, `exclude` (regex or list), `pagination` (`style: param|path|next_link`, `param`, `path_template`, `next_link`, `max_pages`), `max_resources` |
+| `html` | links on a listing page | `follow`/`detail` (CSS selector), `include`, `exclude` (URL regex or list, applied to the listing link), `title_include`, `title_exclude` (anchor-text regex — skips detail fetches), `pagination` (`style: param|path|next_link`, `param`, `path_template`, `next_link`, `max_pages`), `max_resources` |
 | `sitemap` | sitemap.xml + sitemap indexes | `url`, `include`/`exclude`, `max_resources` |
 | `feed` | RSS/Atom items + enclosures | `url`, `allowed_formats`, `include`/`exclude`, `max_resources` |
 | `ckan` | `package_search` + resource URLs | `base`, `package_query`, `fq`, `organization`, `row_limit`, `allowed_formats`, `max_resources` |
@@ -108,6 +108,7 @@ Validate: `openquyhoach sources validate`.
 | `ogc_wms` | GetCapabilities layers | `base`, `include`/`exclude` |
 | `arcgis_rest` | Feature/MapServer layer list | `base` or `services` (multi-service), `include`/`exclude` (layer-name regex), `max_resources` |
 | `sqhkt_grid` | TP.HCM portal point-lookup sweep | `bbox`, `step`, `delay` |
+| `ekgis_grid` | eKGIS portal point-lookup sweep (Hải Phòng et al.) | `lookup_url`, `detail_url`, `bbox`, `step`, `delay` |
 | `planning_portal` | portal-specific paging | portal-dependent |
 
 `include`/`exclude` accept a single regex or a list; resources matching an
@@ -124,6 +125,12 @@ layers as `var name = {FeatureCollection};` (e.g. quyhoach.hanoi.vn) are
 fetched with the `http` connector — the raw `.js` stays the immutable
 artifact, the payload is validated+extracted at ingest. Vendor-hosted
 content of this kind is `derived_machine_unreviewed`, never official.
+
+**TLS**: `crawl_policy.verify_tls: false` disables certificate
+verification for a single source — descriptor-scoped, never global.
+Use only for verified government/vendor hosts whose IIS/CDN ships an
+incomplete certificate chain (observed on `*.haiphong.gov.vn` and
+`g7.cdnchinhphu.vn`); document the verification date in `provenance`.
 
 ## 4. Run it
 
@@ -161,3 +168,8 @@ record `seen_unchanged` / `seen_changed` / `not_modified` /
 | `vietnam/provinces/ha-noi/quyhoach-hanoi-vn-zoning` | `jsvar_geojson` zoning layers | vendor portal — **derived_machine_unreviewed** |
 | `vietnam/provinces/khanh-hoa/gis-khanhhoa-arcgis` | 30 layers / 12 MapServers | Sở TN&MT Khánh Hòa ArcGIS |
 | `vietnam/provinces/tay-ninh/gis-tayninh-geoserver-wfs` | 38 WFS typenames | Tỉnh Tây Ninh GeoServer |
+| `vietnam/provinces/hai-phong/quyhoach-haiphong-ekgis` | `ekgis_grid` sweep → 82 plan boundaries+details | Sở Xây dựng Hải Phòng eKGIS |
+| `vietnam/provinces/hai-phong/data-haiphong-ckan` | CKAN catalog → planning XLSX | Cổng dữ liệu Hải Phòng |
+| `vietnam/provinces/can-tho/data-cantho-ckan` | CKAN catalog → planning XLSX/TXT | Cổng dữ liệu Cần Thơ |
+| `vietnam/provinces/an-giang/sxd-quy-hoach-{phan-khu,kien-truc}` | HTML index → 42 decision PDFs | Sở Xây dựng An Giang |
+| `vietnam/national/congbao-chinhphu-qd-ttg` | QĐ-TTg index → signed decision PDFs | Văn phòng Chính phủ — Công báo |

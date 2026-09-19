@@ -1,0 +1,71 @@
+key: vietnam/national/congbao-chinhphu-qd-ttg
+name: "Công báo Chính phủ — Quyết định của Thủ tướng (QĐ-TTg) PDF"
+description: >
+  'Văn bản đăng công báo → Quyết định' listing on the official national
+  gazette (congbao.chinhphu.vn). Article URLs carry the issuing agency in
+  the slug (`-qd-ttg-` = Prime Minister); the include filter restricts to
+  those. QĐ-TTg are the instruments that approve every provincial master
+  plan (Quy hoạch tỉnh 2021–2030, tầm nhìn 2050) — e.g. 1686/QĐ-TTg for
+  Hà Nam. Each article links the signed PDF on congbaocdn.chinhphu.vn.
+  Decision metadata machine-extracted from PDF text.
+authority: "Văn phòng Chính phủ — Công báo"
+jurisdiction: "Việt Nam (quốc gia)"
+admin_codes: {}
+source_type: html_index
+base_url: "https://congbao.chinhphu.vn"
+homepage: "https://congbao.chinhphu.vn/van-ban-dang-cong-bao/quyet-dinh-l2.htm"
+planning_types: [quy_hoach_chung, van_ban_phap_luat]
+priority: 40
+discovery:
+  index_url: "https://congbao.chinhphu.vn/van-ban-dang-cong-bao/quyet-dinh-l2.htm"
+  link_selector: 'a[href*="/van-ban/quyet-dinh-so-"]'
+  # slug carries the issuing agency: -qd-ttg- = Prime Minister. Two URL
+  # shapes exist: quyet-dinh-so-N-qd-ttg-ID.htm and .../qd-ttg-ID/SUB.htm
+  include: '-qd-ttg-'
+  # only planning-related QĐ-TTg — the full index runs ~600 decisions/year,
+  # mostly non-planning; anchor-text filter skips their detail+PDF fetches
+  title_include: '(?i)quy hoạch'
+  detail:
+    enabled: true
+    file_selector: 'a[href*="congbaocdn.chinhphu.vn"][href$=".pdf"], a[href*="cdnchinhphu.vn"][href*=".pdf"]'
+  pagination:
+    style: path
+    path_template: "/van-ban-dang-cong-bao/quyet-dinh-l2/trang-{page}.htm"
+    start: 2
+    max_pages: 160  # page ~100 ≈ Mar-2024; provincial-plan approvals
+                    # (Nov-2023→mid-2024, incl. Hà Nam 1686) sit deeper
+  max_resources: 400
+allowed_formats: [pdf]
+parser:
+  default_derivation_level: official_document
+  default_dataset_group: hoso_gis
+refresh:
+  interval_seconds: 86400
+rate_limit:
+  max_concurrent: 1
+  max_requests_per_run: 400
+  max_bytes: 134217728
+crawl_policy:
+  delay_seconds: 1.0
+  max_requests: 500
+  respect_robots: true
+  verify_tls: false   # congbao.chinhphu.vn + g7.cdnchinhphu.vn ship
+                      # incomplete cert chains (verified 2026-09-19)
+rights:
+  redistribution_status: unknown
+  attribution: "Văn phòng Chính phủ — Công báo Chính phủ"
+  access_notes: >
+    Official national gazette. Gazette-published decisions are public
+    records; conservative publication posture retained.
+provenance:
+  prepared_by: "OpenQuyHoach maintainers"
+  verified_on: "2026-09-19"
+  evidence:
+    - "https://congbao.chinhphu.vn/van-ban-dang-cong-bao/quyet-dinh-l2.htm"
+    - "https://congbao.chinhphu.vn/van-ban/quyet-dinh-so-1659-qd-ttg-470359.htm"
+    - "https://congbao.chinhphu.vn/van-ban/quyet-dinh-so-1686-qd-ttg-40879/47883.htm"
+  notes: >
+    Verified 2026-09-19: listing paginates /trang-{N}.htm; decision slugs
+    embed agency (-qd-ttg-); articles link signed PDF on congbaocdn.
+    max_pages deliberately small — only recent pages needed for the
+    2021–2030 provincial-plan approval wave; raise to backfill further.
