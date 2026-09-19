@@ -94,6 +94,45 @@ UNITS = [
         "(sáp nhập Kiên Giang, hiệu lực 2025-07-01) giữ mã 89 của "
         "tỉnh trùng tên; mã 91 của Kiên Giang đóng.",
     ),
+    (
+        "37",
+        "Tỉnh Ninh Bình",
+        "province",
+        date(2025, 7, 1),
+        None,
+        "QĐ 19/2025/QĐ-TTg + NQ 202/2025/QH15 — tỉnh Ninh Bình mới "
+        "(sáp nhập Hà Nam 35, Nam Định 36, Ninh Bình 37; hiệu lực "
+        "2025-07-01) giữ mã 37 của tỉnh trùng tên.",
+    ),
+    (
+        "37",
+        "Tỉnh Ninh Bình",
+        "province",
+        None,
+        date(2025, 6, 30),
+        "GSO mã tỉnh 37 — đơn vị tiền sáp nhập; QH tỉnh cũ "
+        "(218/QĐ-TTg) vẫn tham chiếu đơn vị này.",
+    ),
+    (
+        "35",
+        "Tỉnh Hà Nam",
+        "province",
+        None,
+        date(2025, 6, 30),
+        "GSO mã tỉnh 35 — đóng sau sáp nhập vào tỉnh Ninh Bình mới "
+        "(NQ 202/2025/QH15); QH tỉnh Hà Nam (1686/QĐ-TTg, tầm nhìn "
+        "2050) vẫn là văn bản hiệu lực cho lãnh thổ cũ.",
+    ),
+    (
+        "36",
+        "Tỉnh Nam Định",
+        "province",
+        None,
+        date(2025, 6, 30),
+        "GSO mã tỉnh 36 — đóng sau sáp nhập vào tỉnh Ninh Bình mới "
+        "(NQ 202/2025/QH15); QH tỉnh Nam Định (1729/QĐ-TTg) tham "
+        "chiếu đơn vị này.",
+    ),
 ]
 
 

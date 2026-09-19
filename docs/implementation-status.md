@@ -220,13 +220,17 @@ run in this repo (WSL: `.venv/bin/python3.14 -m pytest`, docker infra via
   but feature export + planning tiles are auth-walled/empty),
   congbao.{angiang,sonla,tayninh} (bound-issue gazette PDFs — need
   per-decision segmentation), opendata.angiang (downloads login-walled).
-- Hà Nam: no usable provincial source — sxd.hanam.gov.vn deactivated
-  (NotActive.htm), stnmt.hanam.gov.vn unreachable, hanam.gov.vn serves
-  error shell. The provincial plan itself is covered via the national
-  gazette source: QĐ 1686/QĐ-TTg (2023, tầm nhìn 2050) on
-  congbao.chinhphu.vn.
-- Ninh Bình: gis.ninhbinh auth-walled, sxd.ninhbinh internal-only,
-  data.ninhbinh SPA with 404 API endpoints (partially deployed).
+- Hà Nam / Nam Định / Ninh Bình (now the merged tỉnh Ninh Bình, code
+  37, NQ 202/2025/QH15 + QĐ 19/2025/QĐ-TTg, eff. 2025-07-01): no usable
+  provincial sources — sxd.hanam deactivated (NotActive.htm),
+  stnmt.hanam unreachable, gis.ninhbinh auth-walled, sxd.ninhbinh
+  internal-only, data.ninhbinh SPA with 404 API endpoints. All three
+  pre-merger provincial plans are in the national-gazette corpus and
+  remain the in-force instruments for their territories until the
+  merged-province plan is approved: Hà Nam 1686/QĐ-TTg, Nam Định
+  1729/QĐ-TTg, Ninh Bình 218/QĐ-TTg. The post-merger provincial plan
+  was not yet published on the gazette at last sweep — recurring syncs
+  will catch it.
 - Tây Ninh WFS `max_features: 8000` caps 3 large layers (qhsdd_duchoa,
   quyhoach1, A05_QuyHoachTaiNguyenNuoc) — raise cap or page server-side
   when full coverage needed.
