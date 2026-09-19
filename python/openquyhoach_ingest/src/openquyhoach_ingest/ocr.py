@@ -275,8 +275,10 @@ def ocr_pending_documents(
     for doc in todo:
         try:
             ocr_document(session, doc, run=run, dpi=dpi, lang=lang, max_pages=max_pages)
+            session.commit()  # per-doc — progress survives interruption
             stats["processed"] += 1
         except Exception as exc:  # keep batch going; artifact stays immutable
+            session.rollback()
             stats["failed"] += 1
             stats["errors"].append({"document_id": str(doc.id), "error": str(exc)[:200]})
     return stats

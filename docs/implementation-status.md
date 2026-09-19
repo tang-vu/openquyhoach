@@ -53,6 +53,27 @@ run in this repo (WSL: `.venv/bin/python3.14 -m pytest`, docker infra via
 - Planning-version resolution accepts extraction hints; machine-extracted
   documents are review-gated.
 
+**Assisted OCR (`openquyhoach_ingest.ocr`)**
+- Offline adapter: `pdftoppm` (poppler) + `tesseract` with `vie`
+  traineddata — no external service, no credentials.
+- `ocr` CLI batch (`--limit/--dpi/--lang/--max-pages`); per-document
+  `ocr_document()`; skips gracefully when binaries absent.
+- OCR output lives on `document.meta['ocr']` (engine, lang, dpi, pages,
+  text sha256 + capped preview, candidates with page/snippet evidence).
+- Fields are filled **only when empty** and marked `derived_machine`;
+  a metadata review task is ensured; provenance event records
+  `tool=tesseract/<ver>` + params. Original scanned artifact untouched.
+
+**Semantic vector dedup**
+- `_vector_content_digest`: sha256 over sorted (layer, external id,
+  class, properties, WKB) — stable across byte-level upstream re-renders
+  (e.g. GeoServer regenerating identical GeoJSON).
+- `_dedupe_semantic` runs after every vector ingest: identical content
+  to the prior dataset of the same name/record drops the redundant copy
+  (+ its empty version); the new artifact/observation stay as evidence.
+  Verified live: 5 identical WFS re-ingests deduped, 2 genuinely new
+  layers kept.
+
 **Operational surfaces**
 - API: `/v1/sources`, `/v1/sources/{key}`, `/v1/changes`, `/v1/coverage`
   (freshness-enriched), `/v1/coverage/detail`, record `data_class`.
@@ -64,7 +85,8 @@ run in this repo (WSL: `.venv/bin/python3.14 -m pytest`, docker infra via
 
 **Real pilots (verified, ingested)**
 - `vietnam/provinces/ho-chi-minh/stnmt-geoserver-wfs` — official WFS
-  planning polygons (VN-2000), 5 typenames.
+  planning polygons (VN-2000), 7 typenames (4 district QHPKSDD layers +
+  QHPKSDD_SHAPE + 3 DGHC boundary layers); all published to PMTiles.
 - `vietnam/provinces/ho-chi-minh/qhkt-phe-duyet-quy-hoach` — official
   HTML listing → 190+ scanned decision PDFs (needs_ocr + review tasks).
 - `vietnam/provinces/ho-chi-minh/stnmt-wcs-lidar-vandai3-thuduc` — official

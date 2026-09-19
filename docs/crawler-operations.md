@@ -103,7 +103,16 @@ openquyhoach sources validate            # descriptor schema check
 openquyhoach coverage                    # per-unit coverage + freshness
 openquyhoach changes recent [--source K] # upstream change events
 openquyhoach scheduler tick|loop         # scheduling driver
+openquyhoach ocr [--limit N]             # OCR batch for scanned PDFs
 ```
+
+OCR requires `pdftoppm` (poppler) + `tesseract` with the `vie`
+traineddata on PATH. Each document renders ≤ `--max-pages` pages at
+`--dpi` (default 200) and OCRs them with `--lang` (default `vie+eng`).
+Output is stored on `document.meta['ocr']` with a text sha256, evidence-
+bearing candidates, and stays `derived_machine` + review-gated — OCR is
+an assisted step, never authoritative. Rough cost: ~30–90 s per scanned
+PDF depending on page count; run in batches during quiet hours.
 
 ## API / MCP
 
