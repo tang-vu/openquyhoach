@@ -40,6 +40,47 @@ from ..serializers import (
 router = APIRouter(prefix="/v1", tags=["browse"])
 
 
+def _record_data_classes(s, record_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """Classify each record by the source keys behind its artifacts.
+
+    demo/* sources are synthetic fixtures; anything else observed real data.
+    A record backed by both is honestly reported as "mixed"."""
+    if not record_ids:
+        return {}
+    from openquyhoach_core.models import Source
+
+    keys: dict[uuid.UUID, set[str]] = {r: set() for r in record_ids}
+    ds_rows = (
+        s.query(PlanningVersion.planning_record_id, Source.source_key)
+        .join(Dataset, Dataset.planning_version_id == PlanningVersion.id)
+        .join(SourceArtifact, Dataset.source_artifact_id == SourceArtifact.id)
+        .join(Source, SourceArtifact.source_id == Source.id)
+        .filter(PlanningVersion.planning_record_id.in_(record_ids))
+        .all()
+    )
+    doc_rows = (
+        s.query(PlanningVersion.planning_record_id, Source.source_key)
+        .join(Document, Document.planning_version_id == PlanningVersion.id)
+        .join(SourceArtifact, Document.artifact_id == SourceArtifact.id)
+        .join(Source, SourceArtifact.source_id == Source.id)
+        .filter(PlanningVersion.planning_record_id.in_(record_ids))
+        .all()
+    )
+    for rid, key in ds_rows + doc_rows:
+        keys.setdefault(rid, set()).add(key)
+    out: dict[uuid.UUID, str] = {}
+    for rid, ks in keys.items():
+        if not ks:
+            out[rid] = "unknown"
+        elif all(k.startswith("demo/") for k in ks):
+            out[rid] = "synthetic"
+        elif any(k.startswith("demo/") for k in ks):
+            out[rid] = "mixed"
+        else:
+            out[rid] = "official"
+    return out
+
+
 @router.get("/planning-records")
 def list_records(
     page: PageDep,
@@ -54,7 +95,13 @@ def list_records(
             qy = qy.filter(PlanningRecord.jurisdiction == jurisdiction)
         total = qy.count()
         rows = qy.order_by(PlanningRecord.title).offset(page.offset).limit(page.limit).all()
-        return {"total": total, "items": [record_out(r) for r in rows]}
+        classes = _record_data_classes(s, [r.id for r in rows])
+        items = []
+        for r in rows:
+            out = record_out(r)
+            out["data_class"] = classes.get(r.id, "unknown")
+            items.append(out)
+        return {"total": total, "items": items}
 
 
 @router.get("/planning-records/{record_id}")
@@ -70,6 +117,7 @@ def get_record(record_id: uuid.UUID):
             .all()
         )
         out = record_out(r)
+        out["data_class"] = _record_data_classes(s, [r.id]).get(r.id, "unknown")
         out["versions"] = [version_out(v) for v in versions]
         return out
 

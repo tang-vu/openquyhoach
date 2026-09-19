@@ -6,7 +6,9 @@ import SearchBox from "@/components/SearchBox";
 import ProvenanceDrawer from "@/components/ProvenanceDrawer";
 import ComparePanel from "@/components/ComparePanel";
 import AdminPanel from "@/components/AdminPanel";
+import SourcesPanel from "@/components/SourcesPanel";
 import VersionDetail from "@/components/VersionDetail";
+import { DataClassBadge } from "@/components/badges";
 import {
   api,
   type PlanningRecord,
@@ -15,7 +17,7 @@ import {
   type SearchHit,
 } from "@/lib/api";
 
-type Tab = "records" | "compare" | "admin";
+type Tab = "records" | "sources" | "compare" | "admin";
 
 export default function Page() {
   const [tab, setTab] = useState<Tab>("records");
@@ -80,11 +82,11 @@ export default function Page() {
       <aside className="sidebar">
         <h1>OpenQuyHoach</h1>
         <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-          provenance-first planning data — demo fixture
+          provenance-first Vietnamese planning evidence
         </div>
         <SearchBox onPick={onSearchPick} />
         <div className="tabs" style={{ marginTop: 14 }}>
-          {(["records", "compare", "admin"] as Tab[]).map((t) => (
+          {(["records", "sources", "compare", "admin"] as Tab[]).map((t) => (
             <button
               key={t}
               className={tab === t ? "active" : ""}
@@ -106,7 +108,9 @@ export default function Page() {
                   r.id === recordId ? { borderColor: "var(--accent)" } : {}
                 }
               >
-                <div className="title">{r.title}</div>
+                <div className="title">
+                  {r.title} <DataClassBadge dataClass={r.data_class} />
+                </div>
                 <div className="sub">
                   {r.planning_type ?? ""} · {r.scale ?? ""} ·{" "}
                   {r.jurisdiction ?? ""}
@@ -147,6 +151,7 @@ export default function Page() {
           </div>
         )}
 
+        {tab === "sources" && <SourcesPanel />}
         {tab === "compare" && (
           <ComparePanel versions={versions} onCompare={setComparePubId} />
         )}

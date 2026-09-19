@@ -41,7 +41,12 @@ function FeatureCard({ hit }: { hit: FeatureHit }) {
         <dt>sha256</dt>
         <dd className="mono">{p.artifact?.sha256?.slice(0, 24)}…</dd>
         <dt>source</dt>
-        <dd>{p.source?.key ?? "—"}</dd>
+        <dd>
+          {p.source?.key ?? "—"}{" "}
+          {p.source?.key?.startsWith("demo/") && (
+            <span className="badge synthetic">DEMO</span>
+          )}
+        </dd>
       </dl>
       {Object.keys(hit.properties).length > 0 && (
         <details>

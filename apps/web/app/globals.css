@@ -33,6 +33,9 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
 .badge.official { color: var(--official); border-color: var(--official); }
 .badge.derived { color: var(--derived); border-color: var(--derived); }
 .badge.unreviewed { color: var(--unreviewed); border-color: var(--unreviewed); }
+.badge.synthetic { color: var(--muted); border-color: var(--muted);
+  border-style: dashed; }
+.badge.changed { color: var(--accent); border-color: var(--accent); }
 
 input[type=text], input[type=password], select {
   width: 100%; padding: 7px 9px; border-radius: 6px; font-size: 13px;

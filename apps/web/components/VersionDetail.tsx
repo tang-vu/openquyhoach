@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, type DatasetInfo, type DocumentInfo } from "@/lib/api";
+import { OriginBadge } from "@/components/badges";
 
 type Detail = Awaited<ReturnType<typeof api.versionDetail>>;
 
@@ -63,7 +64,7 @@ export default function VersionDetail({
 
       {d.documents.length > 0 && (
         <>
-          <h2>Official documents</h2>
+          <h2>Source documents</h2>
           {d.documents.map((doc) => (
             <DocRow key={doc.id} doc={doc} />
           ))}
@@ -136,7 +137,10 @@ function DatasetRow({ d }: { d: DatasetInfo }) {
 function DocRow({ doc }: { doc: DocumentInfo }) {
   return (
     <div className="item" style={{ cursor: "default" }}>
-      <div className="title">{doc.title ?? doc.document_number ?? "document"}</div>
+      <div className="title">
+        {doc.title ?? doc.document_number ?? "document"}{" "}
+        <OriginBadge origin={doc.metadata_origin} />
+      </div>
       <div className="sub">
         {doc.document_type ?? "—"} · {doc.document_number ?? "—"} ·{" "}
         {doc.signed_date ?? "—"} · {doc.page_count ?? "?"}p

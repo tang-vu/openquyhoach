@@ -53,6 +53,9 @@ export interface PlanningRecord {
   scale: string | null;
   jurisdiction: string | null;
   status: string;
+  /** synthetic = demo fixture sources only; official = real observed
+   *  sources; mixed = both; unknown = no artifacts linked yet */
+  data_class?: "synthetic" | "official" | "mixed" | "unknown";
 }
 
 export interface PlanningVersion {
@@ -111,10 +114,52 @@ export interface DocumentInfo {
   title: string | null;
   signed_date: string | null;
   issuing_authority: string | null;
+  /** provenance of the document's own fields — machine-extracted values
+   *  read derived_machine until a reviewer confirms them */
+  metadata_origin?: string | null;
   page_count: number | null;
   artifact_id: string | null;
   planning_version_id: string;
   candidate_codes?: unknown;
+}
+
+export interface SourceInfo {
+  id: string;
+  key: string;
+  /** synthetic = demo/* fixture descriptor; official = real observed source */
+  data_class?: "synthetic" | "official";
+  name: string;
+  source_type: string;
+  base_url: string | null;
+  jurisdiction: string | null;
+  license: string | null;
+  redistribution_status: string;
+  enabled: boolean;
+  priority: number;
+  authority_id: string | null;
+  crawl?: {
+    health: string;
+    freshness: string;
+    due: boolean;
+    last_check_at: string | null;
+    last_success_at: string | null;
+    last_change_at: string | null;
+    next_check_at: string | null;
+    consecutive_failures: number;
+    resources_seen: number;
+    last_http_status: number | null;
+    last_error: string | null;
+    locked: boolean;
+  } | null;
+}
+
+export interface ChangeEventInfo {
+  id: string;
+  source: string;
+  change_type: string;
+  detected_at: string;
+  resource_id: string | null;
+  detail: Record<string, unknown>;
 }
 
 export interface ReviewTask {
@@ -195,6 +240,15 @@ export const api = {
     ),
   reviewTasks: (status = "pending") =>
     get<{ items: ReviewTask[] }>("/v1/review/tasks", { status }),
+  sources: (health?: string) =>
+    get<{ total: number; items: SourceInfo[] }>(
+      "/v1/sources",
+      health ? { health } : undefined,
+    ),
+  changes: (limit = 30) =>
+    get<{ total: number; items: ChangeEventInfo[] }>("/v1/changes", {
+      limit: String(limit),
+    }),
   resolveTask: (
     taskId: string,
     approve: boolean,

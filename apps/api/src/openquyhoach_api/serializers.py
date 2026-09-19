@@ -26,6 +26,9 @@ def source_out(s: Source) -> dict:
     return {
         "id": str(s.id),
         "key": s.source_key,
+        # demo/* descriptors are deterministic synthetic fixtures — every
+        # other source key denotes an observed official/derived real source
+        "data_class": "synthetic" if s.source_key.startswith("demo/") else "official",
         "name": s.name,
         "source_type": s.source_type,
         "base_url": s.base_url,
