@@ -127,5 +127,5 @@ def test_redirect_to_private_host_blocked(tmp_path):
             302, headers={"location": "http://169.254.169.254/latest/meta-data"}
         )
     )
-    with pytest.raises(Exception):  # FetchBlockedError (SSRF)
+    with pytest.raises(FetchBlockedError):
         fetch_url("https://example.com/redir", tmp_path)

@@ -1,7 +1,7 @@
 """Polite, safe HTTP fetching shared by connectors.
 
 * SSRF guard on every URL (openquyhoach_core.security.check_url_allowed),
-  re-checked on the *final* URL after redirects
+  re-validated on *each* redirect hop before it is followed
 * conditional requests via ETag / If-Modified-Since
 * streaming download with hard byte cap
 * exponential backoff on 429/5xx via tenacity
@@ -19,7 +19,7 @@ import tempfile
 import time
 from email.message import Message
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 import httpx
 from openquyhoach_core.errors import FetchBlockedError, ValidationError
@@ -33,6 +33,9 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 log = get_logger(__name__)
 
 _last_hit: dict[str, float] = {}
+
+# Redirects are followed manually so every hop can be re-validated.
+_MAX_REDIRECTS = 10
 
 # Headers worth keeping as fetch evidence — never credentials or cookies.
 _CAPTURED_HEADERS = (
@@ -126,59 +129,73 @@ def fetch_url(
     tmp_path = Path(tmp.name)
     total = 0
     try:
-        with httpx.stream(
-            "GET",
-            url,
-            headers=headers,
-            follow_redirects=True,
-            timeout=s.fetch_timeout_seconds,
-        ) as resp:
-            if resp.status_code == 304:
-                return {"not_modified": True, "url": url, "http_status": 304}
-            if resp.status_code in (429, 500, 502, 503, 504):
-                raise RetryableFetch(f"HTTP {resp.status_code} for {url}")
-            resp.raise_for_status()
-            # Re-check the *final* URL after redirects — a public URL may
-            # redirect to a private host.
-            check_url_allowed(str(resp.url), s)
-            cl = resp.headers.get("content-length")
-            if cl and cl.isdigit() and int(cl) > limit:
-                raise FetchBlockedError(
-                    f"content-length {cl} exceeds cap {limit}", detail={"url": url}
-                )
-            with tmp:
-                for chunk in resp.iter_bytes(1024 * 256):
-                    total += len(chunk)
-                    if total > limit:
-                        raise FetchBlockedError(
-                            f"download exceeds cap {limit}", detail={"url": url}
-                        )
-                    tmp.write(chunk)
-            sha, size = sha256_file(tmp_path)
-            if expected_sha256 and sha != expected_sha256:
-                raise ValidationError(
-                    f"checksum mismatch: expected {expected_sha256}, got {sha}",
-                    detail={"url": url},
-                )
-            resp_headers = {
-                h: resp.headers[h] for h in _CAPTURED_HEADERS if h in resp.headers
-            }
-            return {
-                "not_modified": False,
-                "local_path": tmp_path,
-                "canonical_url": url,
-                "retrieved_url": str(resp.url),
-                "http_status": resp.status_code,
-                "sha256": sha,
-                "size": size,
-                "mime_type": (resp.headers.get("content-type") or "").split(";")[0] or None,
-                "etag": resp.headers.get("etag"),
-                "last_modified": resp.headers.get("last-modified"),
-                "filename": filename_from_headers(
-                    resp.headers.get("content-disposition"), str(resp.url)
-                ),
-                "response_headers": resp_headers,
-            }
+        current = url
+        # Manual redirect following: every hop is re-validated against the
+        # SSRF guard *before* it is requested — a public URL redirecting to
+        # a private/metadata host is refused without issuing the request.
+        for _hop in range(_MAX_REDIRECTS + 1):
+            check_url_allowed(current, s)
+            with httpx.stream(
+                "GET",
+                current,
+                headers=headers,
+                follow_redirects=False,
+                timeout=s.fetch_timeout_seconds,
+            ) as resp:
+                if resp.is_redirect and resp.headers.get("location"):
+                    current = urljoin(current, resp.headers["location"])
+                    continue
+                if resp.status_code == 304:
+                    return {"not_modified": True, "url": url, "http_status": 304}
+                if resp.status_code in (429, 500, 502, 503, 504):
+                    raise RetryableFetch(f"HTTP {resp.status_code} for {url}")
+                resp.raise_for_status()
+                cl = resp.headers.get("content-length")
+                if cl and cl.isdigit() and int(cl) > limit:
+                    raise FetchBlockedError(
+                        f"content-length {cl} exceeds cap {limit}",
+                        detail={"url": url},
+                    )
+                with tmp:
+                    for chunk in resp.iter_bytes(1024 * 256):
+                        total += len(chunk)
+                        if total > limit:
+                            raise FetchBlockedError(
+                                f"download exceeds cap {limit}", detail={"url": url}
+                            )
+                        tmp.write(chunk)
+                sha, size = sha256_file(tmp_path)
+                if expected_sha256 and sha != expected_sha256:
+                    raise ValidationError(
+                        f"checksum mismatch: expected {expected_sha256}, got {sha}",
+                        detail={"url": url},
+                    )
+                resp_headers = {
+                    h: resp.headers[h]
+                    for h in _CAPTURED_HEADERS
+                    if h in resp.headers
+                }
+                return {
+                    "not_modified": False,
+                    "local_path": tmp_path,
+                    "canonical_url": url,
+                    "retrieved_url": str(resp.url),
+                    "http_status": resp.status_code,
+                    "sha256": sha,
+                    "size": size,
+                    "mime_type": (resp.headers.get("content-type") or "").split(";")[0]
+                    or None,
+                    "etag": resp.headers.get("etag"),
+                    "last_modified": resp.headers.get("last-modified"),
+                    "filename": filename_from_headers(
+                        resp.headers.get("content-disposition"), str(resp.url)
+                    ),
+                    "response_headers": resp_headers,
+                }
+        else:
+            raise FetchBlockedError(
+                f"too many redirects for {url}", detail={"url": url}
+            )
     except Exception:
         tmp_path.unlink(missing_ok=True)
         raise

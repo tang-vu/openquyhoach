@@ -60,8 +60,8 @@ class OgcApiFeaturesConnector:
                     "crs": col.get("crs"),
                     "extent": col.get("extent"),
                     "links": [
-                        {"rel": l.get("rel"), "href": l.get("href"), "type": l.get("type")}
-                        for l in (col.get("links") or [])
+                        {"rel": link.get("rel"), "href": link.get("href"), "type": link.get("type")}
+                        for link in (col.get("links") or [])
                     ],
                 },
             )
@@ -81,9 +81,9 @@ class OgcApiFeaturesConnector:
             params = None  # next links carry their own query
             url = next(
                 (
-                    urljoin(item.url, l["href"])
-                    for l in (data.get("links") or [])
-                    if l.get("rel") == "next"
+                    urljoin(item.url, link["href"])
+                    for link in (data.get("links") or [])
+                    if link.get("rel") == "next"
                 ),
                 None,
             )

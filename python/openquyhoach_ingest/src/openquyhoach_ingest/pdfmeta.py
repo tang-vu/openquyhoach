@@ -82,7 +82,7 @@ RE_PLAN_TITLE = re.compile(
     re.I,
 )
 RE_PLANNING_PERIOD = re.compile(
-    r"(?:thoi\s+ky|giai\s+doan)\s+(?:quy\s+hoach\s+)?(?:den\s+nam|den)?\s*(\d{4})\s*(?:[-–]|den\s+nam)?\s*(\d{4})?",
+    r"(?:thoi\s+ky|giai\s+doan)\s+(?:quy\s+hoach\s+)?(?:den\s+nam|den)?\s*(\d{4})\s*(?:[-–]|den\s+nam)?\s*(\d{4})?",  # noqa: RUF001 - en-dash intentional: VN docs write ranges like 2021-2030 with it
     re.I,
 )
 

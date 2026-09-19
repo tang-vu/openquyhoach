@@ -45,9 +45,8 @@ class WfsConnector:
             resp = c.get(caps_url)
             resp.raise_for_status()
         # FeatureType list via ElementTree (namespace-agnostic)
-        import xml.etree.ElementTree as ET
-
         import re
+        import xml.etree.ElementTree as ET
 
         from .common import _patterns
 

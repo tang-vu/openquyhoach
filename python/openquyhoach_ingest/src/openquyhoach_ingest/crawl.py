@@ -70,11 +70,11 @@ def canonicalize_url(url: str, rules: dict | None = None) -> str:
     parts = urlparse(url)
     scheme = parts.scheme.lower() or "https"
     netloc = parts.netloc.lower()
-    if rules.get("strip_default_port", True):
-        if (scheme == "http" and netloc.endswith(":80")) or (
-            scheme == "https" and netloc.endswith(":443")
-        ):
-            netloc = netloc.rsplit(":", 1)[0]
+    if rules.get("strip_default_port", True) and (
+        (scheme == "http" and netloc.endswith(":80"))
+        or (scheme == "https" and netloc.endswith(":443"))
+    ):
+        netloc = netloc.rsplit(":", 1)[0]
     params = dict(parse_qsl(parts.query, keep_blank_values=True))
     if rules.get("strip_query"):
         params = {}

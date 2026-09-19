@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query
 from openquyhoach_core.db import session_scope
-from openquyhoach_core.enums import ResourceStatus
 from openquyhoach_core.models import (
     AdministrativeUnit,
     CoverageSummary,
@@ -27,65 +26,9 @@ from openquyhoach_core.models import (
 from sqlalchemy import func
 
 from ..deps import PageDep
-from ..serializers import iso, source_out
+from ..serializers import crawl_state_out, iso, source_out
 
 router = APIRouter(prefix="/v1", tags=["ops"])
-
-
-def _freshness(st: SourceCrawlState | None, now: datetime) -> dict:
-    if st is None or st.last_check_at is None:
-        return {"freshness": "never_checked", "due": True}
-    due = st.next_check_at is None or st.next_check_at <= now
-    if st.last_success_at is None:
-        return {"freshness": "never_succeeded", "due": True}
-    return {"freshness": "overdue" if due else "fresh", "due": due}
-
-
-def crawl_state_out(st: SourceCrawlState | None, now: datetime) -> dict:
-    base = _freshness(st, now)
-    if st is None:
-        return {**base, "health": "unknown", "resources_seen": 0}
-    return {
-        **base,
-        "health": st.health,
-        "last_check_at": iso(st.last_check_at),
-        "last_success_at": iso(st.last_success_at),
-        "last_change_at": iso(st.last_change_at),
-        "next_check_at": iso(st.next_check_at),
-        "consecutive_failures": st.consecutive_failures,
-        "resources_seen": st.resources_seen,
-        "last_http_status": st.last_http_status,
-        "last_error": (st.last_error or "")[:300] or None,
-        "locked": bool(st.locked_until and st.locked_until > now),
-    }
-
-
-@router.get("/sources")
-def list_sources(
-    health: str | None = Query(None),
-    enabled: bool | None = Query(None),
-    jurisdiction: str | None = Query(None),
-):
-    now = datetime.now(UTC)
-    with session_scope() as s:
-        qy = (
-            s.query(Source, SourceCrawlState)
-            .outerjoin(SourceCrawlState, SourceCrawlState.source_id == Source.id)
-            .order_by(Source.priority.asc(), Source.id.asc())
-        )
-        if enabled is not None:
-            qy = qy.filter(Source.enabled.is_(enabled))
-        if jurisdiction:
-            qy = qy.filter(Source.jurisdiction == jurisdiction)
-        if health:
-            qy = qy.filter(SourceCrawlState.health == health)
-        rows = qy.all()
-        items = []
-        for src, st in rows:
-            out = source_out(src)
-            out["crawl"] = crawl_state_out(st, now)
-            items.append(out)
-        return {"total": len(items), "items": items}
 
 
 @router.get("/sources/{key:path}")

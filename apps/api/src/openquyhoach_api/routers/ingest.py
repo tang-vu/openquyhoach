@@ -8,31 +8,54 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException
 from openquyhoach_core.db import session_scope
 from openquyhoach_core.enums import ProvenanceOp
-from openquyhoach_core.models import IngestionRun, ReviewTask, Source
+from openquyhoach_core.models import (
+    IngestionRun,
+    ReviewTask,
+    Source,
+    SourceCrawlState,
+)
 from openquyhoach_core.provenance import record_event
 from openquyhoach_core.queue import get_queue
 from openquyhoach_ingest.sources import sync_sources, validate_all
 from pydantic import BaseModel, Field
 
 from ..deps import AdminGuard, PageDep
-from ..serializers import run_out, source_out, task_out
+from ..serializers import crawl_state_out, run_out, source_out, task_out
 
 router = APIRouter(prefix="/v1", tags=["ingest"])
 
 
 @router.get("/sources")
-def list_sources(page: PageDep, enabled: bool | None = None):
+def list_sources(
+    page: PageDep,
+    enabled: bool | None = None,
+    health: str | None = None,
+    jurisdiction: str | None = None,
+):
+    now = datetime.now(UTC)
     with session_scope() as s:
-        qy = s.query(Source)
+        qy = s.query(Source, SourceCrawlState).outerjoin(
+            SourceCrawlState, SourceCrawlState.source_id == Source.id
+        )
         if enabled is not None:
             qy = qy.filter(Source.enabled == enabled)
-        return {
-            "total": qy.count(),
-            "items": [
-                source_out(r)
-                for r in qy.order_by(Source.source_key).offset(page.offset).limit(page.limit).all()
-            ],
-        }
+        if jurisdiction:
+            qy = qy.filter(Source.jurisdiction == jurisdiction)
+        if health:
+            qy = qy.filter(SourceCrawlState.health == health)
+        total = qy.count()
+        rows = (
+            qy.order_by(Source.priority.asc(), Source.source_key)
+            .offset(page.offset)
+            .limit(page.limit)
+            .all()
+        )
+        items = []
+        for src, st in rows:
+            out = source_out(src)
+            out["crawl"] = crawl_state_out(st, now)
+            items.append(out)
+        return {"total": total, "items": items}
 
 
 @router.get("/sources/validate")
