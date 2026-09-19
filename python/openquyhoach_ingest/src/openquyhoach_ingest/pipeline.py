@@ -28,6 +28,7 @@ from openquyhoach_core.enums import (
     ArtifactStatus,
     DerivationLevel,
     IngestionStatus,
+    MetadataOrigin,
     ProvenanceOp,
     ReviewStatus,
     TaskType,
@@ -102,34 +103,60 @@ def _parse_date(v) -> date | None:
 
 
 def resolve_planning_version(
-    session: Session, source_cfg: SourceConfig | None, artifact: SourceArtifact
+    session: Session,
+    source_cfg: SourceConfig | None,
+    artifact: SourceArtifact,
+    hints: dict | None = None,
 ) -> PlanningVersion:
     """Get-or-create the planning record+version this artifact belongs to.
 
-    Driven by the descriptor's `planning:` block. A bare URL/file ingest
-    without a descriptor creates a placeholder record flagged for curation.
+    Resolution order, strongest evidence first:
+
+    1. the descriptor's ``planning:`` block — OFFICIAL_EXPLICIT
+       (the descriptor author copied values from the official source);
+    2. ``hints`` — machine-extracted candidates (PDF text, portal fields)
+       — DERIVED_MACHINE, always review-gated;
+    3. source name fallback — UNKNOWN placeholder for curation.
+
+    ``hints`` keys mirror the planning block (title, decision_number,
+    approval_date, effective_from, planning_type, scale,
+    approving_authority, information_code, supersedes_decision).
     """
     planning = (source_cfg.meta.get("planning") if source_cfg else None) or {}
-    title = planning.get("title") or (source_cfg.name if source_cfg else "Unattributed ingest")
+    hints = hints or {}
+    derived = bool(hints) and not planning
+    title = (
+        planning.get("title")
+        or hints.get("title")
+        or (source_cfg.name if source_cfg else "Unattributed ingest")
+    )
+    info_code = planning.get("information_code") or hints.get("information_code")
     record = (
         session.query(PlanningRecord).filter_by(normalized_title=vn_normalize(title)).one_or_none()
     )
+    if record is None and info_code:
+        record = (
+            session.query(PlanningRecord)
+            .filter_by(official_information_code=info_code)
+            .one_or_none()
+        )
     if record is None:
         record = PlanningRecord(
             title=title,
             normalized_title=vn_normalize(title),
-            planning_type=planning.get("planning_type"),
-            scale=planning.get("scale"),
+            planning_type=planning.get("planning_type") or hints.get("planning_type"),
+            scale=planning.get("scale") or hints.get("scale"),
             jurisdiction=source_cfg.jurisdiction if source_cfg else None,
             approving_authority=planning.get("approving_authority")
+            or hints.get("approving_authority")
             or (source_cfg.authority if source_cfg else None),
-            official_information_code=planning.get("information_code"),
+            official_information_code=info_code,
             status="active",
         )
         session.add(record)
         session.flush()
 
-    decision = planning.get("decision_number")
+    decision = planning.get("decision_number") or hints.get("decision_number")
     version = None
     if decision:
         version = (
@@ -137,20 +164,53 @@ def resolve_planning_version(
             .filter_by(planning_record_id=record.id, approval_decision_number=decision)
             .one_or_none()
         )
+    origin = (
+        MetadataOrigin.OFFICIAL_EXPLICIT.value
+        if planning.get("decision_number")
+        else (MetadataOrigin.DERIVED_MACHINE.value if decision else MetadataOrigin.UNKNOWN.value)
+    )
     if version is None:
         version = PlanningVersion(
             planning_record_id=record.id,
-            version_kind="original",
+            version_kind=planning.get("version_kind") or "original",
             version_label=planning.get("version_label"),
             approval_decision_number=decision,
-            approval_date=_parse_date(planning.get("approval_date")),
-            effective_from=_parse_date(planning.get("effective_from")),
+            approval_date=_parse_date(planning.get("approval_date") or hints.get("approval_date")),
+            effective_from=_parse_date(
+                planning.get("effective_from") or hints.get("effective_from")
+            ),
             legal_status="approved" if decision else "unknown",
+            metadata_origin=origin,
             source_artifact_id=artifact.id,
-            notes="auto-created by ingestion" if not decision else None,
+            notes="auto-created by ingestion" if not planning.get("decision_number") else None,
         )
         session.add(version)
         session.flush()
+    elif version.metadata_origin in (None, MetadataOrigin.UNKNOWN.value) and origin != MetadataOrigin.UNKNOWN.value:
+        # enrich an unexplained version — never downgrade a known origin
+        version.metadata_origin = origin
+
+    # supersedes lineage: a referenced earlier decision links versions
+    supersedes = planning.get("supersedes_decision") or hints.get("supersedes_decision")
+    if supersedes and version.supersedes_version_id is None:
+        prior = (
+            session.query(PlanningVersion)
+            .filter(
+                PlanningVersion.planning_record_id == record.id,
+                PlanningVersion.approval_decision_number == supersedes,
+                PlanningVersion.id != version.id,
+            )
+            .one_or_none()
+        )
+        if prior is not None:
+            version.supersedes_version_id = prior.id
+            if version.version_kind == "original":
+                version.version_kind = "replacement"
+    if derived:
+        version.meta = {
+            **(version.meta or {}),
+            "metadata_hints": {k: v for k, v in hints.items() if v is not None},
+        }
     return version
 
 
@@ -447,6 +507,27 @@ def _ingest_raster(
     return ds
 
 
+def _pdf_hints(info, source_cfg: SourceConfig | None) -> dict:
+    """Map PDF candidates onto the planning-hint vocabulary used by
+    ``resolve_planning_version``. Only emitted when the descriptor has no
+    planning block — official values always win."""
+    planning = (source_cfg.meta.get("planning") if source_cfg else None) or {}
+    if planning:
+        return {}
+    c = info.candidate_codes
+    hints = {
+        "title": c.get("plan_title"),
+        "decision_number": c.get("decision_number"),
+        "approval_date": c.get("signed_date"),
+        "effective_from": c.get("effective_date"),
+        "scale": c.get("scale"),
+        "approving_authority": c.get("approving_authority"),
+        "information_code": c.get("planning_code"),
+        "supersedes_decision": c.get("supersedes_decision"),
+    }
+    return {k: v for k, v in hints.items() if v}
+
+
 def _ingest_pdf(
     session: Session,
     artifact: SourceArtifact,
@@ -456,18 +537,66 @@ def _ingest_pdf(
     run: IngestionRun,
 ) -> Document:
     info = inspect_pdf(path)
+    hints = _pdf_hints(info, source_cfg)
+    if hints:
+        # extracted candidates may name a more specific version — re-resolve
+        version = resolve_planning_version(session, source_cfg, artifact, hints)
+
+    planning = (source_cfg.meta.get("planning") if source_cfg else None) or {}
+    c = info.candidate_codes
+    field_origins: dict[str, str] = {}
+
+    document_number = planning.get("decision_number") or c.get("decision_number")
+    if document_number:
+        field_origins["document_number"] = (
+            MetadataOrigin.OFFICIAL_EXPLICIT.value
+            if planning.get("decision_number")
+            else MetadataOrigin.DERIVED_MACHINE.value
+        )
+    title = info.metadata.get("Title") or planning.get("title") or artifact.filename
+    if title:
+        field_origins["title"] = (
+            MetadataOrigin.DERIVED_DETERMINISTIC.value
+            if info.metadata.get("Title")
+            else MetadataOrigin.OFFICIAL_EXPLICIT.value
+        )
+    signed = _parse_date(c.get("signed_date"))
+    if signed:
+        field_origins["signed_date"] = MetadataOrigin.DERIVED_MACHINE.value
+    issuing = (
+        planning.get("approving_authority")
+        or (source_cfg.authority if source_cfg else None)
+        or c.get("approving_authority")
+    )
+    if issuing:
+        field_origins["issuing_authority"] = (
+            MetadataOrigin.OFFICIAL_EXPLICIT.value
+            if (planning.get("approving_authority") or (source_cfg and source_cfg.authority))
+            else MetadataOrigin.DERIVED_MACHINE.value
+        )
+    # document-level origin = weakest origin used anywhere on the record
+    origins = set(field_origins.values())
+    if MetadataOrigin.DERIVED_MACHINE.value in origins:
+        doc_origin = MetadataOrigin.DERIVED_MACHINE.value
+    elif MetadataOrigin.UNKNOWN.value in origins:
+        doc_origin = MetadataOrigin.UNKNOWN.value
+    elif MetadataOrigin.DERIVED_DETERMINISTIC.value in origins:
+        doc_origin = MetadataOrigin.DERIVED_DETERMINISTIC.value
+    elif origins:
+        doc_origin = MetadataOrigin.OFFICIAL_EXPLICIT.value
+    else:
+        doc_origin = MetadataOrigin.UNKNOWN.value
+
     doc = Document(
         planning_version_id=version.id,
         artifact_id=artifact.id,
-        document_type="approval_decision"
-        if info.candidate_codes.get("decision_number")
-        else "document",
-        # candidates only — reviewer confirms; never inferred from filename
-        document_number=info.candidate_codes.get("decision_number"),
-        title=info.metadata.get("Title") or artifact.filename,
-        normalized_title=vn_normalize(info.metadata.get("Title") or artifact.filename or ""),
-        signed_date=_parse_date(info.candidate_codes.get("signed_date")),
-        issuing_authority=source_cfg.authority if source_cfg else None,
+        document_type="approval_decision" if document_number else "document",
+        document_number=document_number,
+        title=title,
+        normalized_title=vn_normalize(title or ""),
+        signed_date=signed,
+        issuing_authority=issuing,
+        metadata_origin=doc_origin,
         page_count=info.page_count,
         meta={
             "pdf_metadata": info.metadata,
@@ -475,6 +604,8 @@ def _ingest_pdf(
             "has_embedded_text": info.has_embedded_text,
             "needs_ocr": info.needs_ocr,
             "candidate_codes": info.candidate_codes,
+            "candidates": {k: vars(v) for k, v in info.candidates.items()},
+            "field_origins": field_origins,
         },
     )
     session.add(doc)
@@ -495,6 +626,20 @@ def _ingest_pdf(
         run_id=run.id,
         parameters={"pages": info.page_count, "embedded_text": info.has_embedded_text},
     )
+    if doc_origin == MetadataOrigin.DERIVED_MACHINE.value:
+        session.add(
+            ReviewTask(
+                target_type="document",
+                target_id=doc.id,
+                task_type=TaskType.REVIEW_METADATA.value,
+                priority=55,
+                reason="document fields populated by machine extraction — verify against evidence",
+                evidence={
+                    "field_origins": field_origins,
+                    "candidates": {k: vars(v) for k, v in info.candidates.items()},
+                },
+            )
+        )
     if info.needs_ocr:
         session.add(
             ReviewTask(
