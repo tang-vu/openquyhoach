@@ -13,6 +13,7 @@ from . import (
     ogc_api,  # noqa: F401
     planning_portal,  # noqa: F401
     sitemap,  # noqa: F401
+    sqhkt_grid,  # noqa: F401
 )
 from .base import Connector, DiscoveredItem, FetchResult, get_connector, register
 

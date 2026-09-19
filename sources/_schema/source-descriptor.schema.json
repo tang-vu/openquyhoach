@@ -32,7 +32,7 @@
       "enum": [
         "file", "http", "html_index", "sitemap", "feed", "ckan",
         "arcgis_rest", "ogc_wms", "ogc_wfs", "ogc_api_features",
-        "planning_portal", "document_repository"
+        "planning_portal", "document_repository", "sqhkt_grid"
       ]
     },
     "base_url": {"type": "string", "description": "https:// or file:// base"},

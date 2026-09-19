@@ -1,0 +1,73 @@
+key: vietnam/provinces/ho-chi-minh/sqhkt-qlqh-portal
+name: "Sở QHKT TP.HCM — cổng thông tin quy hoạch (đồ án QHPK toàn TP)"
+description: >
+  Official planning-information API behind the public portal
+  thongtinquyhoach.hochiminhcity.gov.vn, operated by the HCMC Department
+  of Planning and Architecture (Sở Quy hoạch và Kiến trúc). The API has
+  no bulk list: plans are enumerated by grid-sampling the per-point
+  lookup POST /api/doan/ranhqhpk over the city extent. For each unique
+  MaQHPKRanh plan code the connector yields the plan boundary (GeoJSON
+  synthesised from the verbatim Ranh field + official metadata) and the
+  official plan-map PDF at /api/bandogiay/download-pdf/QHPK/{ma}.
+authority: "Sở Quy hoạch và Kiến trúc Thành phố Hồ Chí Minh"
+jurisdiction: "Thành phố Hồ Chí Minh"
+admin_codes:
+  province: "79"
+source_type: sqhkt_grid
+base_url: "https://sqhkt-qlqh.tphcm.gov.vn"
+homepage: "https://thongtinquyhoach.hochiminhcity.gov.vn/"
+planning_types: [quy_hoach_phan_khu]
+priority: 15
+discovery:
+  # sampling grid over the HCMC extent (VN-2000 central meridian zone)
+  bbox: [106.55, 10.35, 107.05, 11.25]
+  grid_step: 0.02          # ~2.2 km — approved QHPK plans are km²-scale
+  point_endpoint: "/api/doan/ranhqhpk"
+  pdf_url_template: "/api/bandogiay/download-pdf/QHPK/{ma}"
+  max_resources: 400
+allowed_formats: [geojson, pdf]
+parser:
+  default_derivation_level: official_vector
+  default_dataset_group: moc_gioi
+  layer_map_aliases:
+    qhpk_ranh: ranh_do_an_qhpk
+  layer_map:
+    ranh_do_an_qhpk:
+      canonical_name: "Ranh đồ án quy hoạch phân khu"
+      thematic_group: plan_boundary
+      derivation_level: official_vector
+      dataset_group: moc_gioi
+refresh:
+  interval_seconds: 1209600   # fortnightly — approved plan set changes slowly
+rate_limit:
+  max_concurrent: 1
+  max_bytes: 52428800         # 50MB per plan-map PDF
+crawl_policy:
+  delay_seconds: 0.4          # politeness delay between grid POSTs
+  respect_robots: true
+rights:
+  redistribution_status: unknown
+  attribution: "Sở Quy hoạch và Kiến trúc TP.HCM"
+  access_notes: >
+    Public JSON/PDF API serving the authority's own planning portal;
+    no robots.txt restrictions observed (verified 2026-09-19). No
+    explicit licence published — stored and exposed conservatively.
+  notes: >
+    Field values (SoQD, NgayDuyet, CoQuanPD, DienTich, TenDoAn) are
+    verbatim copies from the authority's API responses — deterministic
+    derivation, not machine extraction.
+provenance:
+  prepared_by: "OpenQuyHoach maintainers"
+  verified_on: "2026-09-19"
+  evidence:
+    - "https://thongtinquyhoach.hochiminhcity.gov.vn/"
+    - "https://sqhkt-qlqh.tphcm.gov.vn/api/doan/ranhqhpk"
+    - "https://sqhkt-qlqh.tphcm.gov.vn/api/bandogiay/download-pdf/QHPK/001_2012_6708_03"
+    - "https://sqhkt-qlqh.tphcm.gov.vn/api/quan-huyen"
+  notes: >
+    Endpoint behaviour verified by direct probing 2026-09-19:
+    POST ranhqhpk returns full official plan records (decision number,
+    approval date, approving authority, consultant, area, status) plus
+    the plan boundary polygon; bandogiay returns the official plan-map
+    PDF (~15MB) per MaQHPKRanh code.
+enabled: true

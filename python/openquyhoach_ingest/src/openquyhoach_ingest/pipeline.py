@@ -167,10 +167,11 @@ def resolve_planning_version(
             .filter_by(planning_record_id=record.id, approval_decision_number=decision)
             .one_or_none()
         )
+    hint_origin = hints.get("_origin") or MetadataOrigin.DERIVED_MACHINE.value
     origin = (
         MetadataOrigin.OFFICIAL_EXPLICIT.value
         if planning.get("decision_number")
-        else (MetadataOrigin.DERIVED_MACHINE.value if decision else MetadataOrigin.UNKNOWN.value)
+        else (hint_origin if decision else MetadataOrigin.UNKNOWN.value)
     )
     if version is None:
         version = PlanningVersion(
@@ -212,7 +213,11 @@ def resolve_planning_version(
     if derived:
         version.meta = {
             **(version.meta or {}),
-            "metadata_hints": {k: v for k, v in hints.items() if v is not None},
+            "metadata_hints": {
+                k: v
+                for k, v in hints.items()
+                if v is not None and not k.startswith("_")
+            },
         }
     return version
 
@@ -554,15 +559,27 @@ def _ingest_pdf(
         version = resolve_planning_version(session, source_cfg, artifact, hints)
 
     planning = (source_cfg.meta.get("planning") if source_cfg else None) or {}
+    disc = (
+        (artifact.meta or {}).get("discovered_metadata", {}).get("planning_hints")
+        or {}
+    )
     c = info.candidate_codes
     field_origins: dict[str, str] = {}
 
-    document_number = planning.get("decision_number") or c.get("decision_number")
+    document_number = (
+        planning.get("decision_number")
+        or c.get("decision_number")
+        or disc.get("decision_number")
+    )
     if document_number:
         field_origins["document_number"] = (
             MetadataOrigin.OFFICIAL_EXPLICIT.value
             if planning.get("decision_number")
-            else MetadataOrigin.DERIVED_MACHINE.value
+            else (
+                MetadataOrigin.DERIVED_MACHINE.value
+                if c.get("decision_number")
+                else MetadataOrigin.DERIVED_DETERMINISTIC.value
+            )
         )
     title = info.metadata.get("Title") or planning.get("title") or artifact.filename
     if title:
@@ -571,20 +588,28 @@ def _ingest_pdf(
             if info.metadata.get("Title")
             else MetadataOrigin.OFFICIAL_EXPLICIT.value
         )
-    signed = _parse_date(c.get("signed_date"))
+    signed = _parse_date(c.get("signed_date")) or _parse_date(disc.get("approval_date"))
     if signed:
-        field_origins["signed_date"] = MetadataOrigin.DERIVED_MACHINE.value
+        field_origins["signed_date"] = (
+            MetadataOrigin.DERIVED_MACHINE.value
+            if c.get("signed_date")
+            else MetadataOrigin.DERIVED_DETERMINISTIC.value
+        )
     issuing = (
         planning.get("approving_authority")
+        or disc.get("approving_authority")
         or (source_cfg.authority if source_cfg else None)
         or c.get("approving_authority")
     )
     if issuing:
-        field_origins["issuing_authority"] = (
-            MetadataOrigin.OFFICIAL_EXPLICIT.value
-            if (planning.get("approving_authority") or (source_cfg and source_cfg.authority))
-            else MetadataOrigin.DERIVED_MACHINE.value
-        )
+        if planning.get("approving_authority") or (source_cfg and source_cfg.authority):
+            field_origins["issuing_authority"] = MetadataOrigin.OFFICIAL_EXPLICIT.value
+        elif disc.get("approving_authority"):
+            field_origins["issuing_authority"] = (
+                MetadataOrigin.DERIVED_DETERMINISTIC.value
+            )
+        else:
+            field_origins["issuing_authority"] = MetadataOrigin.DERIVED_MACHINE.value
     # document-level origin = weakest origin used anywhere on the record —
     # machine candidates persisted in meta count as machine-derived
     # metadata even when they are not promoted into fields
@@ -740,7 +765,14 @@ def stage_artifact(
         parameters={"size": fetch.size, "detected_format": detected},
     )
 
-    version = resolve_planning_version(session, source_cfg, artifact)
+    # connectors may attach verbatim official planning fields
+    # (``discovered_metadata.planning_hints``) — they resolve the artifact
+    # to its own record/version at derived_deterministic strength
+    disc_hints = (
+        (artifact.meta or {}).get("discovered_metadata", {}).get("planning_hints")
+        or None
+    )
+    version = resolve_planning_version(session, source_cfg, artifact, disc_hints)
     dispatch_artifact(session, fetch.local_path, artifact, version, source_cfg, run, report)
     artifact.status = ArtifactStatus.IMPORTED.value
     return report
