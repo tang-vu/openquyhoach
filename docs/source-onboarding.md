@@ -106,11 +106,24 @@ Validate: `openquyhoach sources validate`.
 | `ogc_api_features` | `/collections` (+ `/items` links) | `base`, `include`/`exclude`, `collections`, `max_resources` |
 | `ogc_wfs` | GetCapabilities typenames | `base`, `include`/`exclude` (typename regex), `max_resources` |
 | `ogc_wms` | GetCapabilities layers | `base`, `include`/`exclude` |
-| `arcgis_rest` | Feature/MapServer layer list | `base`, `layers` |
+| `arcgis_rest` | Feature/MapServer layer list | `base` or `services` (multi-service), `include`/`exclude` (layer-name regex), `max_resources` |
+| `sqhkt_grid` | TP.HCM portal point-lookup sweep | `bbox`, `step`, `delay` |
 | `planning_portal` | portal-specific paging | portal-dependent |
 
 `include`/`exclude` accept a single regex or a list; resources matching an
 exclude are dropped, then (when include is present) must match include.
+
+**ArcGIS legacy servers**: `arcgis_rest` pages with `resultOffset` by
+default and falls back to OBJECTID-range queries on pre-10.3 services
+("Pagination is not supported"), degrading `orderByFields` /
+`resultRecordCount` independently. `discovery.services` lets one
+descriptor cover multiple MapServers.
+
+**JavaScript-wrapped GeoJSON** (`jsvar_geojson`): portals that publish
+layers as `var name = {FeatureCollection};` (e.g. quyhoach.hanoi.vn) are
+fetched with the `http` connector — the raw `.js` stays the immutable
+artifact, the payload is validated+extracted at ingest. Vendor-hosted
+content of this kind is `derived_machine_unreviewed`, never official.
 
 ## 4. Run it
 
@@ -143,3 +156,8 @@ record `seen_unchanged` / `seen_changed` / `not_modified` /
 | `vietnam/provinces/ho-chi-minh/stnmt-geoserver-wfs` | WFS planning polygons (VN-2000) | Sở TN&MT TP.HCM GeoServer |
 | `vietnam/provinces/ho-chi-minh/qhkt-phe-duyet-quy-hoach` | HTML listing → 190+ decision PDFs | Trung tâm QHKT TP.HCM |
 | `vietnam/provinces/ho-chi-minh/stnmt-wcs-lidar-vandai3-thuduc` | WCS GeoTIFF (LiDAR orthophoto) | Sở TN&MT TP.HCM GeoServer |
+| `vietnam/provinces/ho-chi-minh/sqhkt-qlqh-portal` | `sqhkt_grid` sweep → plan boundaries + decision PDFs | Sở QHKT TP.HCM portal API |
+| `vietnam/provinces/ha-noi/vqh-van-ban-phap-luat` | HTML laws module → 215 legal PDFs | Viện QH xây dựng Hà Nội (.gov.vn) |
+| `vietnam/provinces/ha-noi/quyhoach-hanoi-vn-zoning` | `jsvar_geojson` zoning layers | vendor portal — **derived_machine_unreviewed** |
+| `vietnam/provinces/khanh-hoa/gis-khanhhoa-arcgis` | 30 layers / 12 MapServers | Sở TN&MT Khánh Hòa ArcGIS |
+| `vietnam/provinces/tay-ninh/gis-tayninh-geoserver-wfs` | 38 WFS typenames | Tỉnh Tây Ninh GeoServer |
