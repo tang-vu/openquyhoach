@@ -8,21 +8,72 @@
   "properties": {
     "key": {
       "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$",
-      "description": "namespaced id, e.g. 'ninh-binh/quy-hoach-chung'"
+      "pattern": "^[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)+$",
+      "description": "stable namespaced id, e.g. 'demo/demo-district-v1' or 'vietnam/provinces/da-nang/qh-chung'. The key is identity — administrative reorganisation changes `jurisdiction`/`admin_codes`, never the key."
     },
     "name": {"type": "string", "minLength": 3},
     "description": {"type": "string"},
     "authority": {"type": "string", "description": "issuing authority display name"},
-    "jurisdiction": {"type": "string"},
+    "jurisdiction": {"type": "string", "description": "human jurisdiction label, e.g. 'Thành phố Đà Nẵng'"},
+    "admin_codes": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "official administrative identifiers (mã đơn vị hành chính) where published — kept as strings, codes are not geometry",
+      "properties": {
+        "province": {"type": "string"},
+        "district": {"type": "string"},
+        "commune": {"type": "string"},
+        "scheme": {"type": "string", "description": "code system, e.g. 'gso-dvhc-2021'"},
+        "note": {"type": "string"}
+      }
+    },
     "source_type": {
       "type": "string",
       "enum": [
-        "file", "http", "html_index", "arcgis_rest", "ogc_wms", "ogc_wfs",
+        "file", "http", "html_index", "sitemap", "feed", "ckan",
+        "arcgis_rest", "ogc_wms", "ogc_wfs", "ogc_api_features",
         "planning_portal", "document_repository"
       ]
     },
     "base_url": {"type": "string", "description": "https:// or file:// base"},
+    "homepage": {"type": "string", "description": "official human-facing homepage of the source"},
+    "planning_types": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "planning types this source is expected to publish (quy_hoach_chung|quy_hoach_phan_khu|quy_hoach_chi_tiet|quy_hoach_su_dung_dat|ban_do_dia_chinh|...)"
+    },
+    "priority": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100},
+    "refresh": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "how often the scheduler should re-check this source",
+      "properties": {
+        "interval_seconds": {"type": "integer", "minimum": 300, "default": 86400},
+        "jitter_seconds": {"type": "integer", "minimum": 0, "default": 300},
+        "failure_backoff_multiplier": {"type": "number", "minimum": 1, "default": 2},
+        "max_failure_interval_seconds": {"type": "integer", "minimum": 3600, "default": 604800}
+      }
+    },
+    "rate_limit": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "max_concurrent": {"type": "integer", "minimum": 1, "default": 1},
+        "max_requests_per_run": {"type": "integer", "minimum": 1},
+        "max_bytes": {"type": "integer", "minimum": 1024, "description": "per-file download cap; overrides global default"}
+      }
+    },
+    "canonical_url": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "URL normalisation used for resource identity and deduplication",
+      "properties": {
+        "strip_query": {"type": "boolean", "default": false},
+        "strip_params": {"type": "array", "items": {"type": "string"}},
+        "keep_params": {"type": "array", "items": {"type": "string"}},
+        "strip_fragment": {"type": "boolean", "default": true}
+      }
+    },
     "discovery": {
       "type": "object",
       "additionalProperties": true,
@@ -36,7 +87,34 @@
         "attachment_selector": {"type": "string"},
         "field_selectors": {"type": "object", "additionalProperties": {"type": "string"}},
         "page_param": {"type": "string"},
-        "max_pages": {"type": "integer", "minimum": 1, "maximum": 500}
+        "max_pages": {"type": "integer", "minimum": 1, "maximum": 500},
+        "pagination": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "style": {"type": "string", "enum": ["param", "path", "next_link"]},
+            "param": {"type": "string"},
+            "path_template": {"type": "string", "description": "e.g. '/van-ban/page/{page}'"},
+            "next_selector": {"type": "string"},
+            "start": {"type": "integer", "default": 1},
+            "max_pages": {"type": "integer", "minimum": 1, "maximum": 500}
+          }
+        },
+        "include": {"type": "string", "description": "regex a candidate URL must match"},
+        "exclude": {"type": "string", "description": "regex a candidate URL must not match"},
+        "follow": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "optional second hop (detail page -> attachment)",
+          "properties": {
+            "file_selector": {"type": "string"},
+            "attr": {"type": "string"}
+          }
+        },
+        "max_resources": {"type": "integer", "minimum": 1},
+        "package_query": {"type": "string", "description": "CKAN package_search q"},
+        "organization": {"type": "string", "description": "CKAN organisation filter"},
+        "row_limit": {"type": "integer", "minimum": 1, "maximum": 1000}
       }
     },
     "parser": {
@@ -46,11 +124,16 @@
         "format_hint": {"type": "string"},
         "layer_map": {
           "type": "object",
-          "description": "source layer name -> {canonical_name, thematic_group, geometry_type, required_attributes, no_overlap, no_gaps, no_line_cross}",
+          "description": "source layer name -> {canonical_name, key_field, thematic_group, geometry_type, required_attributes, no_overlap, no_gaps, no_line_cross, field_map, style, derivation_level, dataset_group}",
           "additionalProperties": {
             "type": "object",
             "additionalProperties": true
           }
+        },
+        "layer_map_aliases": {
+          "type": "object",
+          "description": "alias -> canonical layer_map key, for layer-name variations across files",
+          "additionalProperties": {"type": "string"}
         },
         "field_map": {"type": "object", "additionalProperties": {"type": "string"}},
         "default_derivation_level": {
@@ -65,6 +148,7 @@
           "type": "string",
           "enum": ["nen_dia_hinh", "hien_trang", "quy_hoach", "moc_gioi", "hoso_gis", "other"]
         },
+        "dbf_encoding": {"type": "string", "description": "explicit DBF charset when the file lies (e.g. 'UTF-8', 'CP1258', 'TCVN3')"},
         "crs_override": {"type": "string", "description": "explicit CRS (EPSG code or WKT) — used only when documented; never a guess"}
       }
     },
@@ -81,6 +165,7 @@
           "enum": ["allowed", "metadata_only", "restricted", "unknown"]
         },
         "attribution": {"type": "string"},
+        "access_notes": {"type": "string", "description": "robots/legal/technical access constraints observed"},
         "notes": {"type": "string"}
       }
     },
@@ -90,7 +175,8 @@
       "properties": {
         "delay_seconds": {"type": "number", "minimum": 0},
         "max_requests": {"type": "integer", "minimum": 1},
-        "respect_robots": {"type": "boolean"},
+        "respect_robots": {"type": "boolean", "default": true},
+        "user_agent": {"type": "string", "description": "source-specific UA override (rare)"},
         "notes": {"type": "string"}
       }
     },
@@ -113,7 +199,23 @@
         "decision_number": {"type": "string"},
         "approval_date": {"type": "string"},
         "effective_from": {"type": "string"},
-        "approving_authority": {"type": "string"}
+        "effective_to": {"type": "string"},
+        "approving_authority": {"type": "string"},
+        "information_code": {"type": "string"},
+        "version_label": {"type": "string"},
+        "version_kind": {"type": "string", "enum": ["original", "amendment", "adjustment", "replacement"]},
+        "supersedes_decision": {"type": "string", "description": "decision number of the version this one replaces/adjusts"}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "who wrote this descriptor and how the source was verified",
+      "properties": {
+        "prepared_by": {"type": "string"},
+        "verified_on": {"type": "string", "description": "YYYY-MM-DD the source was manually verified"},
+        "evidence": {"type": "array", "items": {"type": "string"}, "description": "URLs/pages demonstrating this is an official public source"},
+        "notes": {"type": "string"}
       }
     },
     "enabled": {"type": "boolean"},

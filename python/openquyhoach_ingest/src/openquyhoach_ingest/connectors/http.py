@@ -26,6 +26,8 @@ class HttpConnector:
             etag=item.etag,
             last_modified=item.last_modified,
             crawl_delay=float(source.crawl_policy.get("delay_seconds", 0)),
+            max_bytes=(source.rate_limit or {}).get("max_bytes"),
+            user_agent=source.crawl_policy.get("user_agent"),
         )
         if res.get("not_modified"):
             return FetchResult(
@@ -35,6 +37,7 @@ class HttpConnector:
                 sha256="",
                 size=0,
                 not_modified=True,
+                http_status=res.get("http_status"),
             )
         return FetchResult(
             local_path=res["local_path"],
@@ -45,6 +48,9 @@ class HttpConnector:
             mime_type=res.get("mime_type"),
             etag=res.get("etag"),
             last_modified=res.get("last_modified"),
+            filename=res.get("filename"),
+            http_status=res.get("http_status"),
+            response_headers=res.get("response_headers") or {},
         )
 
     def inspect(self, result: FetchResult) -> dict:

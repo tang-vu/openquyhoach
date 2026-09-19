@@ -36,18 +36,28 @@ class SourceConfig:
     authority: str | None = None
     rights: dict = field(default_factory=dict)
     enabled: bool = True
+    priority: int = 100
+    refresh: dict = field(default_factory=dict)
+    rate_limit: dict = field(default_factory=dict)
+    canonical_url: dict = field(default_factory=dict)
     meta: dict = field(default_factory=dict)
 
 
 @dataclass
 class DiscoveredItem:
-    """Something a source offers for download."""
+    """Something a source offers for download — a normalized candidate.
+
+    ``identity`` lets a connector supply a dedup-stable resource id (e.g. a
+    CKAN resource id) that survives URL churn; ``metadata`` carries
+    auditable upstream facts (title, dates, upstream ids, layer hints).
+    """
 
     url: str  # canonical location (https:// or file://)
     suggested_filename: str | None = None
     metadata: dict = field(default_factory=dict)  # title, date, ids, layer hints...
     etag: str | None = None
     last_modified: str | None = None
+    identity: str | None = None  # connector-supplied stable resource id
 
 
 @dataclass
@@ -65,6 +75,9 @@ class FetchResult:
     last_modified: str | None = None
     not_modified: bool = False  # conditional request said cache hit
     filename: str | None = None  # display name from discovery (local_path may be a tempfile)
+    http_status: int | None = None
+    response_headers: dict = field(default_factory=dict)  # captured response evidence
+    metadata: dict = field(default_factory=dict)  # discovered_metadata carried to the artifact
 
 
 @runtime_checkable

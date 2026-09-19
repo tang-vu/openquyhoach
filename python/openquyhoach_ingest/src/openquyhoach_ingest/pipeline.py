@@ -58,7 +58,7 @@ from openquyhoach_quality.engine import FeaturePayload, LayerPayload, Validation
 from openquyhoach_quality.persist import persist_findings
 from sqlalchemy.orm import Session
 
-from .connectors.base import FetchResult, SourceConfig, get_connector
+from .connectors.base import FetchResult, SourceConfig
 from .pdfmeta import inspect_pdf
 from .sources import load_config
 
@@ -665,49 +665,17 @@ def ingest_source(
     limit: int | None = None,
     workdir: Path | None = None,
 ) -> uuid.UUID:
-    """Full pipeline for one registered source."""
-    cfg = load_config(source_key)
-    if not cfg.enabled:
-        from openquyhoach_core.errors import SourceDisabledError
+    """Full pipeline for one registered source.
 
-        raise SourceDisabledError(f"source {source_key} is disabled")
-    connector = get_connector(cfg.source_type)
-    wd = workdir or Path(tempfile.mkdtemp(prefix="oqh-ingest-"))
+    Delegates to the crawl runner (openquyhoach_ingest.crawl.sync_source)
+    which adds persistent crawl state, conditional fetching and upstream
+    change detection on top of the staging pipeline below.
+    """
+    from .crawl import sync_source
 
-    with session_scope() as session:
-        source = _source_row(session, source_key)
-        run = IngestionRun(
-            source_id=source.id if source else None,
-            trigger="cli",
-            software_commit=_git_commit(),
-            status=IngestionStatus.RUNNING.value,
-            meta={"dry_run": dry_run},
-        )
-        session.add(run)
-        session.flush()
-        try:
-            items = list(connector.discover(cfg))
-            run.discovered_count = len(items)
-            for item in items[: limit or None]:
-                if dry_run:
-                    continue
-                fetch = connector.fetch(cfg, item, wd)
-                if getattr(fetch, "not_modified", False):
-                    continue
-                # local_path may be an extension-less tempfile — carry the
-                # discovered filename through so artifacts keep real names
-                fetch.filename = item.suggested_filename or _basename(item.url)
-                run.downloaded_count += 1
-                stage_artifact(session, fetch, source, cfg, run)
-            run.status = IngestionStatus.SUCCEEDED.value
-        except Exception as exc:
-            run.status = IngestionStatus.FAILED.value
-            run.error_summary = str(exc)[:4000]
-            log.exception("ingest.failed", source=source_key)
-            raise
-        finally:
-            run.completed_at = datetime.now(UTC)
-        return run.id
+    return sync_source(
+        source_key, trigger="cli", limit=limit, workdir=workdir, dry_run=dry_run
+    )
 
 
 def ingest_path(

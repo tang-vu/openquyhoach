@@ -5,6 +5,7 @@ from .artifact import SourceArtifact
 from .authority import Authority, Source
 from .changeset import ChangeSet, ChangeSetEntry
 from .coverage import CoverageSummary
+from .crawl import SourceChangeEvent, SourceCrawlState, SourceObservation, SourceResource
 from .dataset import Dataset, Feature, Layer
 from .georef import GeoreferenceJob
 from .ops import IngestionRun, ProvenanceEvent
@@ -32,4 +33,8 @@ __all__ = [
     "ReviewTask",
     "Source",
     "SourceArtifact",
+    "SourceChangeEvent",
+    "SourceCrawlState",
+    "SourceObservation",
+    "SourceResource",
 ]

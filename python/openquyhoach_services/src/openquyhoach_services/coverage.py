@@ -43,9 +43,14 @@ def recompute_coverage(admin_unit_id: uuid.UUID | None = None) -> int:
         for unit in units:
             if unit is None:
                 continue
-            # sources scoped to the unit's jurisdiction name
+            # sources scoped to the unit — explicit FK link first, then the
+            # legacy jurisdiction-name match
             src_count = (
-                s.query(func.count(Source.id)).filter(Source.jurisdiction == unit.name).scalar()
+                s.query(func.count(Source.id))
+                .filter(
+                    (Source.admin_unit_id == unit.id) | (Source.jurisdiction == unit.name)
+                )
+                .scalar()
                 or 0
             )
             records = s.query(PlanningRecord).filter(PlanningRecord.admin_unit_id == unit.id).all()

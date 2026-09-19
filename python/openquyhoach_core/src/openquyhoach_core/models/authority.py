@@ -48,6 +48,10 @@ class Source(Base):
     crawl_policy: Mapped[dict] = mapped_column(JSONB, default=dict)
     descriptor: Mapped[dict] = mapped_column(JSONB, default=dict)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    priority: Mapped[int] = mapped_column(default=100)
+    admin_unit_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("administrative_units.id")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

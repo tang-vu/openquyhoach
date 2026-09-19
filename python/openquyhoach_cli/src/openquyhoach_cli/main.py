@@ -26,9 +26,13 @@ app = typer.Typer(name="openquyhoach", no_args_is_help=True, add_completion=Fals
 sources_app = typer.Typer(name="sources", no_args_is_help=True)
 ingest_app = typer.Typer(name="ingest", no_args_is_help=True)
 db_app = typer.Typer(name="db", no_args_is_help=True)
+scheduler_app = typer.Typer(name="scheduler", no_args_is_help=True)
+changes_app = typer.Typer(name="changes", no_args_is_help=True)
 app.add_typer(sources_app)
 app.add_typer(ingest_app)
 app.add_typer(db_app)
+app.add_typer(scheduler_app)
+app.add_typer(changes_app)
 console = Console()
 err = Console(stderr=True)
 
@@ -191,11 +195,155 @@ def sources_inspect(key: str):
 
 
 @sources_app.command("sync")
-def sources_sync():
-    """Upsert descriptors from sources/ into the database."""
-    from openquyhoach_ingest.sources import sync_sources
+def sources_sync(
+    key: str | None = typer.Argument(None, help="crawl a single source key"),
+    limit: int | None = typer.Option(None, "--limit"),
+    download: bool = typer.Option(True, "--download/--no-download"),
+):
+    """With a key: run one crawl cycle for that source (observe + fetch +
+    change detection). Without: upsert all descriptors into the database."""
+    if key is None:
+        from openquyhoach_ingest.sources import sync_sources
 
-    console.print_json(json.dumps(sync_sources(), ensure_ascii=False))
+        console.print_json(json.dumps(sync_sources(), ensure_ascii=False))
+        return
+    from openquyhoach_ingest.crawl import sync_source
+
+    run_id = sync_source(key, trigger="cli", limit=limit, download=download)
+    console.print(f"run_id={run_id}")
+
+
+@sources_app.command("sync-all")
+def sources_sync_all(limit: int | None = typer.Option(None, "--limit")):
+    """Run one crawl cycle for every enabled source, in priority order."""
+    from openquyhoach_core.db import session_scope
+    from openquyhoach_core.models import Source
+    from openquyhoach_ingest.crawl import sync_source
+
+    with session_scope() as s:
+        keys = [
+            k
+            for (k,) in s.query(Source.source_key)
+            .filter(Source.enabled.is_(True))
+            .order_by(Source.priority.asc(), Source.id.asc())
+            .all()
+        ]
+    results = {}
+    for k in keys:
+        try:
+            results[k] = str(sync_source(k, trigger="cli", limit=limit))
+        except Exception as exc:
+            results[k] = f"error: {exc}"
+    console.print_json(json.dumps(results, ensure_ascii=False))
+
+
+@sources_app.command("discover")
+def sources_discover(key: str, limit: int | None = typer.Option(None, "--limit")):
+    """Discovery-only observation: refresh the resource inventory, no fetch."""
+    from openquyhoach_ingest.crawl import sync_source
+
+    run_id = sync_source(key, trigger="cli", limit=limit, download=False)
+    console.print(f"run_id={run_id}")
+
+
+@sources_app.command("status")
+def sources_status(json_out: bool = typer.Option(False, "--json")):
+    """Per-source crawl state: health, freshness, failures, next check."""
+    from openquyhoach_core.db import session_scope
+    from openquyhoach_core.models import Source, SourceCrawlState
+
+    with session_scope() as s:
+        rows = (
+            s.query(Source, SourceCrawlState)
+            .outerjoin(SourceCrawlState, SourceCrawlState.source_id == Source.id)
+            .order_by(Source.priority.asc(), Source.id.asc())
+            .all()
+        )
+        payload = [
+            {
+                "key": src.source_key,
+                "enabled": src.enabled,
+                "health": st.health if st else "unknown",
+                "last_check": str(st.last_check_at) if st and st.last_check_at else None,
+                "last_success": str(st.last_success_at) if st and st.last_success_at else None,
+                "last_change": str(st.last_change_at) if st and st.last_change_at else None,
+                "next_check": str(st.next_check_at) if st and st.next_check_at else None,
+                "failures": st.consecutive_failures if st else 0,
+                "resources": st.resources_seen if st else 0,
+                "error": (st.last_error or "")[:120] if st else None,
+            }
+            for src, st in rows
+        ]
+    if json_out:
+        console.print_json(json.dumps(payload, ensure_ascii=False))
+        return
+    table = Table(title="Source crawl status")
+    for c in ("key", "health", "last_check", "last_change", "next_check", "fails", "res"):
+        table.add_column(c)
+    for r in payload:
+        table.add_row(
+            r["key"],
+            r["health"],
+            (r["last_check"] or "-")[:19],
+            (r["last_change"] or "-")[:19],
+            (r["next_check"] or "-")[:19],
+            str(r["failures"]),
+            str(r["resources"]),
+        )
+    console.print(table)
+
+
+@sources_app.command("failures")
+def sources_failures(limit: int = typer.Option(20, "--limit")):
+    """Recent failed runs and error observations across all sources."""
+    from openquyhoach_core.db import session_scope
+    from openquyhoach_core.enums import ObservationOutcome
+    from openquyhoach_core.models import IngestionRun, Source, SourceObservation
+
+    with session_scope() as s:
+        runs = (
+            s.query(IngestionRun, Source.source_key)
+            .join(Source, Source.id == IngestionRun.source_id)
+            .filter(IngestionRun.status.in_(["failed", "partial"]))
+            .order_by(IngestionRun.started_at.desc())
+            .limit(limit)
+            .all()
+        )
+        obs = (
+            s.query(SourceObservation, Source.source_key)
+            .join(Source, Source.id == SourceObservation.source_id)
+            .filter(SourceObservation.outcome == ObservationOutcome.error.value)
+            .order_by(SourceObservation.observed_at.desc())
+            .limit(limit)
+            .all()
+        )
+        console.print_json(
+            json.dumps(
+                {
+                    "failed_runs": [
+                        {
+                            "run": str(r.id),
+                            "source": k,
+                            "status": r.status,
+                            "at": str(r.started_at),
+                            "error": (r.error_summary or "")[:200],
+                        }
+                        for r, k in runs
+                    ],
+                    "error_observations": [
+                        {
+                            "source": k,
+                            "at": str(o.observed_at),
+                            "http_status": o.http_status,
+                            "detail": o.detail,
+                        }
+                        for o, k in obs
+                    ],
+                },
+                ensure_ascii=False,
+                default=str,
+            )
+        )
 
 
 # ---------------------------------------------------------------- ingest
@@ -448,6 +596,128 @@ def db_seed(demo: bool = typer.Option(False, "--demo")):
 
     seed()
     console.print("[green]demo data seeded[/]")
+
+
+# ---------------------------------------------------------------- coverage
+
+
+@app.command()
+def coverage(
+    recompute: bool = typer.Option(False, "--recompute"),
+    json_out: bool = typer.Option(False, "--json"),
+):
+    """Coverage + freshness per administrative unit."""
+    if recompute:
+        from openquyhoach_services.coverage import recompute_coverage
+
+        n = recompute_coverage()
+        console.print(f"recomputed {n} coverage rows")
+    from openquyhoach_core.db import session_scope
+    from openquyhoach_core.models import AdministrativeUnit, CoverageSummary
+
+    with session_scope() as s:
+        rows = (
+            s.query(CoverageSummary, AdministrativeUnit)
+            .join(AdministrativeUnit, AdministrativeUnit.id == CoverageSummary.admin_unit_id)
+            .all()
+        )
+        payload = [
+            {
+                "unit": u.name,
+                "official_code": u.official_code,
+                "level": u.level,
+                "state": c.state,
+                "sources": c.source_count,
+                "documents": c.document_count,
+                "datasets": c.dataset_count,
+                "reviewed": c.reviewed_count,
+                "last_checked": str(c.last_checked) if c.last_checked else None,
+            }
+            for c, u in rows
+        ]
+    if json_out:
+        console.print_json(json.dumps(payload, ensure_ascii=False))
+        return
+    table = Table(title="Coverage")
+    for c in ("unit", "code", "level", "state", "src", "docs", "data", "rev"):
+        table.add_column(c)
+    for r in payload:
+        table.add_row(
+            r["unit"],
+            r["official_code"] or "-",
+            str(r["level"] or "-"),
+            r["state"],
+            str(r["sources"]),
+            str(r["documents"]),
+            str(r["datasets"]),
+            str(r["reviewed"]),
+        )
+    console.print(table)
+
+
+# ---------------------------------------------------------------- changes
+
+
+@changes_app.command("recent")
+def changes_recent(
+    source: str | None = typer.Option(None, "--source"),
+    limit: int = typer.Option(50, "--limit"),
+    json_out: bool = typer.Option(False, "--json"),
+):
+    """Recent upstream change events (added/disappeared/checksum/url/meta)."""
+    from openquyhoach_core.db import session_scope
+    from openquyhoach_core.models import Source, SourceChangeEvent
+
+    with session_scope() as s:
+        q = (
+            s.query(SourceChangeEvent, Source.source_key)
+            .join(Source, Source.id == SourceChangeEvent.source_id)
+            .order_by(SourceChangeEvent.detected_at.desc())
+            .limit(limit)
+        )
+        if source:
+            q = q.filter(Source.source_key == source)
+        rows = [
+            {
+                "source": k,
+                "type": e.change_type,
+                "at": str(e.detected_at),
+                "resource": str(e.resource_id) if e.resource_id else None,
+                "detail": e.detail,
+            }
+            for e, k in q.all()
+        ]
+    if json_out:
+        console.print_json(json.dumps(rows, ensure_ascii=False))
+        return
+    table = Table(title="Recent upstream changes")
+    for c in ("at", "source", "type", "detail"):
+        table.add_column(c)
+    for r in rows:
+        table.add_row(r["at"][:19], r["source"], r["type"], json.dumps(r["detail"])[:80])
+    console.print(table)
+
+
+# ---------------------------------------------------------------- scheduler
+
+
+@scheduler_app.command("tick")
+def scheduler_tick_cmd(limit: int = typer.Option(20, "--limit")):
+    """Enqueue sync jobs for all due sources (one scheduling pass)."""
+    from openquyhoach_ingest.scheduler import scheduler_tick
+
+    console.print_json(json.dumps(scheduler_tick(tick_limit=limit), ensure_ascii=False))
+
+
+@scheduler_app.command("loop")
+def scheduler_loop_cmd(
+    interval: int = typer.Option(60, "--interval"),
+    once: bool = typer.Option(False, "--once"),
+):
+    """Run the scheduler continuously (cron/systemd alternative)."""
+    from openquyhoach_ingest.scheduler import scheduler_loop
+
+    scheduler_loop(interval_s=interval, once=once)
 
 
 def main():  # console_scripts entry

@@ -147,3 +147,60 @@ class TaskType(StrEnum):
     FIX_QUALITY = "fix_quality"
     VERIFY_METADATA = "verify_metadata"
     CURATE_SOURCE = "curate_source"
+    REVIEW_METADATA = "review_metadata"
+    REVIEW_SOURCE = "review_source"
+
+
+class SourceHealth(StrEnum):
+    """Operational health of a configured source — derived from crawl state,
+    never confused with "no upstream changes"."""
+
+    UNKNOWN = "unknown"  # never checked
+    HEALTHY = "healthy"  # first successful check
+    UNCHANGED = "unchanged"  # successful check, nothing new
+    CHANGED = "changed"  # successful check, upstream changes detected
+    DEGRADED = "degraded"  # partial failures or intermittent errors
+    FAILING = "failing"  # consecutive failures past threshold
+    BLOCKED = "blocked"  # robots/policy/403 — we must not fetch
+    DISABLED = "disabled"  # descriptor disabled
+    NEEDS_REVIEW = "needs_review"  # pending review tasks against this source
+
+
+class ResourceStatus(StrEnum):
+    ACTIVE = "active"
+    DISAPPEARED = "disappeared"
+    ERROR = "error"
+
+
+class ObservationOutcome(StrEnum):
+    """What a single resource check observed."""
+
+    SEEN_NEW = "seen_new"  # first observation of this resource
+    SEEN_UNCHANGED = "seen_unchanged"  # bytes identical to last observation
+    SEEN_CHANGED = "seen_changed"  # bytes differ — new artifact revision
+    NOT_MODIFIED = "not_modified"  # server 304 to conditional request
+    DISAPPEARED = "disappeared"  # previously seen, absent from discovery
+    ERROR = "error"  # fetch failed
+    BLOCKED = "blocked"  # robots/policy denied
+
+
+class ChangeType(StrEnum):
+    """Upstream change classification for source_change_events."""
+
+    ADDED = "added"
+    DISAPPEARED = "disappeared"
+    REAPPEARED = "reappeared"
+    CHECKSUM_CHANGED = "checksum_changed"
+    URL_CHANGED = "url_changed"
+    METADATA_CHANGED = "metadata_changed"
+
+
+class MetadataOrigin(StrEnum):
+    """Where a metadata field's value came from. Machine-derived values must
+    never silently become official metadata."""
+
+    OFFICIAL_EXPLICIT = "official_explicit"  # stated by the authority/descriptor
+    DERIVED_DETERMINISTIC = "derived_deterministic"  # rule-based, reproducible
+    DERIVED_MACHINE = "derived_machine"  # regex/ML extraction — needs review
+    HUMAN_REVIEWED = "human_reviewed"  # confirmed by a reviewer
+    UNKNOWN = "unknown"

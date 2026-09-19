@@ -73,6 +73,7 @@ class PlanningVersion(Base):
     supersedes_version_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("planning_versions.id")
     )
+    metadata_origin: Mapped[str] = mapped_column(String(32), default="unknown")
     source_artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("source_artifacts.id"))
     notes: Mapped[str | None] = mapped_column(Text)
     meta: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
@@ -100,6 +101,7 @@ class Document(Base):
     normalized_title: Mapped[str | None] = mapped_column(Text, index=True)
     signed_date: Mapped[date | None] = mapped_column(Date)
     issuing_authority: Mapped[str | None] = mapped_column(String(512))
+    metadata_origin: Mapped[str] = mapped_column(String(32), default="unknown")
     page_count: Mapped[int | None] = mapped_column(Integer)
     meta: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
