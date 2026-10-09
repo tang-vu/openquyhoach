@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type DatasetInfo, type DocumentInfo } from "@/lib/api";
 import { OriginBadge } from "@/components/badges";
 
@@ -15,19 +15,31 @@ export default function VersionDetail({
   rasterOn: string | null;
   onRasterToggle: (datasetId: string | null) => void;
 }) {
-  const [d, setD] = useState<Detail | null>(null);
+  const [detail, setDetail] = useState<{ versionId: string; value: Detail } | null>(null);
   const [manifest, setManifest] = useState<Record<string, unknown> | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [manifestError, setManifestError] = useState<string | null>(null);
+  const generation = useRef(0);
+  const manifestRequest = useRef(0);
 
   useEffect(() => {
-    setD(null);
+    const request = ++generation.current;
+    setDetail(null);
     setManifest(null);
+    setErr(null);
+    setManifestError(null);
     api
       .versionDetail(versionId)
-      .then(setD)
-      .catch((e) => setErr(String(e)));
+      .then((value) => {
+        if (generation.current === request) setDetail({ versionId, value });
+      })
+      .catch((e) => {
+        if (generation.current === request) setErr(String(e));
+      });
+    return () => { ++generation.current; ++manifestRequest.current; };
   }, [versionId]);
 
+  const d = detail?.versionId === versionId ? detail.value : null;
   if (err) return <div className="error">{err}</div>;
   if (!d) return <div className="muted">loading…</div>;
 
@@ -86,11 +98,17 @@ export default function VersionDetail({
               <button
                 style={{ marginTop: 6, fontSize: 12 }}
                 onClick={async () => {
+                  const owner = generation.current;
+                  const request = ++manifestRequest.current;
+                  const current = () => generation.current === owner &&
+                    manifestRequest.current === request;
                   setManifest(null);
+                  setManifestError(null);
                   try {
-                    setManifest(await api.manifest(p.id));
+                    const value = await api.manifest(p.id);
+                    if (current()) setManifest(value);
                   } catch (e) {
-                    setErr(String(e));
+                    if (current()) setManifestError(String(e));
                   }
                 }}
               >
@@ -98,6 +116,7 @@ export default function VersionDetail({
               </button>
             </div>
           ))}
+          {manifestError && <div className="error" role="alert">{manifestError}</div>}
           {manifest && (
             <details open style={{ marginTop: 8 }}>
               <summary className="muted" style={{ cursor: "pointer" }}>

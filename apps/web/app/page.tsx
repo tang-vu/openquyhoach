@@ -9,10 +9,10 @@ import AdminPanel from "@/components/AdminPanel";
 import SourcesPanel from "@/components/SourcesPanel";
 import VersionDetail from "@/components/VersionDetail";
 import { DataClassBadge } from "@/components/badges";
+import { usePlanningSelection } from "@/lib/use-planning-selection";
 import {
   api,
   type PlanningRecord,
-  type PlanningVersion,
   type Publication,
   type SearchHit,
 } from "@/lib/api";
@@ -22,14 +22,9 @@ type Tab = "records" | "sources" | "compare" | "admin";
 export default function Page() {
   const [tab, setTab] = useState<Tab>("records");
   const [records, setRecords] = useState<PlanningRecord[]>([]);
-  const [versions, setVersions] = useState<PlanningVersion[]>([]);
   const [pubs, setPubs] = useState<Publication[]>([]);
-  const [recordId, setRecordId] = useState<string | null>(null);
-  const [versionId, setVersionId] = useState<string | null>(null);
-  const [pubId, setPubId] = useState<string | null>(null);
-  const [comparePubId, setComparePubId] = useState<string | null>(null);
-  const [rasterId, setRasterId] = useState<string | null>(null);
-  const [bbox, setBbox] = useState<number[] | null>(null);
+  const selection = usePlanningSelection(pubs);
+  const { recordId, versionId, versions, selectRecord, selectVersion, focusBbox } = selection;
   const [sel, setSel] = useState<MapSelection | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -44,37 +39,13 @@ export default function Page() {
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (!recordId) return;
-    api
-      .recordDetail(recordId)
-      .then((r) => {
-        setVersions(r.versions);
-        const first = r.versions[0]?.id;
-        if (first) setVersionId(first);
-      })
-      .catch((e) => setErr(String(e)));
-  }, [recordId]);
-
-  // map selected version → its publication; fetch extent for framing
-  useEffect(() => {
-    if (!versionId) return;
-    const pub = pubs.find((p) => p.planning_version_id === versionId);
-    setPubId(pub?.id ?? null);
-    setRasterId(null);
-    api
-      .versionExtent(versionId)
-      .then((e) => setBbox(e.bbox))
-      .catch(() => setBbox(null));
-  }, [versionId, pubs]);
-
   const onSearchPick = useCallback(
     (hit: SearchHit) => {
-      if (hit.kind === "planning_record" && hit.id) setRecordId(hit.id);
+      if (hit.kind === "planning_record" && hit.id) selectRecord(hit.id);
       if (hit.lon != null && hit.lat != null)
-        setBbox([hit.lon - 0.02, hit.lat - 0.02, hit.lon + 0.02, hit.lat + 0.02]);
+        focusBbox([hit.lon - 0.02, hit.lat - 0.02, hit.lon + 0.02, hit.lat + 0.02]);
     },
-    [],
+    [selectRecord, focusBbox],
   );
 
   return (
@@ -103,7 +74,7 @@ export default function Page() {
               <div
                 className="item"
                 key={r.id}
-                onClick={() => setRecordId(r.id)}
+                onClick={() => selectRecord(r.id)}
                 style={
                   r.id === recordId ? { borderColor: "var(--accent)" } : {}
                 }
@@ -117,6 +88,10 @@ export default function Page() {
                 </div>
               </div>
             ))}
+            {selection.loading && <div className="muted" role="status">Loading versions…</div>}
+            {recordId && !selection.loading && !selection.error && versions.length === 0 && (
+              <div className="muted">No versions available for this record.</div>
+            )}
             {versions.length > 0 && (
               <>
                 <h2>Versions</h2>
@@ -124,7 +99,7 @@ export default function Page() {
                   <div
                     className="item"
                     key={v.id}
-                    onClick={() => setVersionId(v.id)}
+                    onClick={() => selectVersion(v.id)}
                     style={
                       v.id === versionId ? { borderColor: "var(--accent)" } : {}
                     }
@@ -141,9 +116,10 @@ export default function Page() {
                 ))}
                 {versionId && (
                   <VersionDetail
+                    key={selection.versionKey}
                     versionId={versionId}
-                    rasterOn={rasterId}
-                    onRasterToggle={setRasterId}
+                    rasterOn={selection.rasterId}
+                    onRasterToggle={selection.onRasterToggle}
                   />
                 )}
               </>
@@ -153,18 +129,19 @@ export default function Page() {
 
         {tab === "sources" && <SourcesPanel />}
         {tab === "compare" && (
-          <ComparePanel versions={versions} onCompare={setComparePubId} />
+          <ComparePanel key={selection.recordKey} versions={versions} onCompare={selection.onCompare} />
         )}
         {tab === "admin" && <AdminPanel />}
         {err && <div className="error" style={{ marginTop: 8 }}>{err}</div>}
+        {selection.error && <div className="error" role="alert" style={{ marginTop: 8 }}>{selection.error}</div>}
       </aside>
 
       <MapView
-        publicationId={pubId}
-        comparePublicationId={comparePubId}
-        rasterDatasetId={rasterId}
+        publicationId={selection.pubId}
+        comparePublicationId={selection.comparePubId}
+        rasterDatasetId={selection.rasterId}
         onSelect={setSel}
-        focusBbox={bbox}
+        focusBbox={selection.bbox}
       />
 
       <aside className="rightbar">

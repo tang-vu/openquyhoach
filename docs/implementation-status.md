@@ -18,6 +18,17 @@ run in this repo (WSL: `.venv/bin/python3.14 -m pytest`, docker infra via
 
 ## What shipped in this phase
 
+**Web selection ownership**
+- Record changes clear the previous version, publication, raster and comparison
+  targets while the new record loads. Empty records do not keep old map layers.
+- Record, version-detail, manifest and extent responses can update only their
+  current navigation. Historical versions and deliberate comparisons within a
+  record remain selectable; point queries keep their own coordinate ownership.
+- Map layer updates distinguish initial readiness from later tile loading, so
+  changing versions removes an old raster even while new tiles are pending.
+- Synthetic web component and production-browser checks cover interrupted and
+  repeated selection without contacting data providers or using real datasets.
+
 **Source registry & crawl state**
 - Descriptor schema v2: refresh policy, rate limits, crawl policy,
   canonical-URL rules, provenance/evidence block, `admin_codes`.
