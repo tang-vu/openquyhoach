@@ -104,11 +104,13 @@ export default function MapView({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
+  const mapLoaded = useRef(false);
 
   useEffect(() => {
     if (!ref.current || mapRef.current) return;
     let active = true;
     let latestRequest = 0;
+    mapLoaded.current = false;
     const map = new maplibregl.Map({
       container: ref.current,
       style: {
@@ -127,6 +129,7 @@ export default function MapView({
       attributionControl: false,
     });
     map.addControl(new maplibregl.NavigationControl(), "top-right");
+    map.on("load", () => { if (active) mapLoaded.current = true; });
     map.on("click", async (e) => {
       if (!active) return;
       const { lng, lat } = e.lngLat;
@@ -153,21 +156,27 @@ export default function MapView({
     const map = mapRef.current;
     if (!map) return;
     const attach = () => {
+      if (mapRef.current !== map) return;
       clearPublicationSources(map);
       if (publicationId) addPublicationSource(map, publicationId, "main");
       if (comparePublicationId)
         addPublicationSource(map, comparePublicationId, "cmp");
     };
-    if (map.isStyleLoaded()) attach();
+    // After the first load, pending tiles can make isStyleLoaded false again.
+    if (mapLoaded.current || map.isStyleLoaded()) attach();
     else map.once("load", attach);
+    return () => { map.off("load", attach); };
   }, [publicationId, comparePublicationId]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const apply = () => setRasterOverlay(map, rasterDatasetId);
-    if (map.isStyleLoaded()) apply();
+    const apply = () => {
+      if (mapRef.current === map) setRasterOverlay(map, rasterDatasetId);
+    };
+    if (mapLoaded.current || map.isStyleLoaded()) apply();
     else map.once("load", apply);
+    return () => { map.off("load", apply); };
   }, [rasterDatasetId]);
 
   useEffect(() => {

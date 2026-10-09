@@ -13,13 +13,21 @@ vi.mock("maplibre-gl", () => ({ default: {
     fits: unknown[] = [];
     loaded = true;
     loadListeners: (() => void)[] = [];
+    loadHandlers: (() => void)[] = [];
+    busyAfterSourceChange = false;
     clickListener: ((event: { lngLat: { lng: number; lat: number } }) => Promise<void>) | null = null;
     constructor() { maps.current = this; }
-    on(event: string, callback: typeof this.clickListener) { if (event === "click") this.clickListener = callback; }
+    on(event: string, callback: any) {
+      if (event === "click") this.clickListener = callback;
+      if (event === "load") this.loadHandlers.push(callback);
+    }
     async click(lng: number, lat: number) { await this.clickListener!({ lngLat: { lng, lat } }); }
     once(event: string, callback: () => void) {
       if (event !== "load") throw new Error("Unexpected synthetic map event");
       this.loadListeners.push(callback);
+    }
+    off(event: string, callback: () => void) {
+      if (event === "load") this.loadListeners = this.loadListeners.filter(fn => fn !== callback);
     }
     addControl() {}
     remove() {}
@@ -27,7 +35,10 @@ vi.mock("maplibre-gl", () => ({ default: {
     getStyle() { return { sources: this.sources, layers: this.layers }; }
     getSource(id: string) { return this.sources[id]; }
     getLayer(id: string) { return this.layers.find(x => x.id === id); }
-    addSource(id: string, source: unknown) { this.sources[id] = source; }
+    addSource(id: string, source: unknown) {
+      this.sources[id] = source;
+      if (this.busyAfterSourceChange) this.loaded = false;
+    }
     addLayer(layer: { id: string }) { this.layers.push(layer); }
     removeSource(id: string) { delete this.sources[id]; }
     removeLayer(id: string) { this.layers = this.layers.filter(x => x.id !== id); }
@@ -35,6 +46,7 @@ vi.mock("maplibre-gl", () => ({ default: {
     load() {
       this.loaded = true;
       const listeners = this.loadListeners; this.loadListeners = [];
+      for (const handler of this.loadHandlers) handler();
       for (const listener of listeners) listener();
     }
   },
@@ -136,6 +148,7 @@ export function setup() {
     lastBounds: () => maps.current.fits.at(-1),
     deferMapLoad: () => { maps.current.loaded = false; },
     async loadMap() { await act(async () => maps.current.load()); },
+    busyAfterSourceChange: () => { maps.current.busyAfterSourceChange = true; },
     async pickRecord(id: string) {
       await act(async () => search.pick!({ kind: "planning_record", id, title: `Synthetic record ${id}` }));
     },

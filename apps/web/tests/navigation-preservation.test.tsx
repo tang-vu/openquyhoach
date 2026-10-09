@@ -107,3 +107,15 @@ it("a later coordinate in the same update owns focus before the extent effect st
   expect(ui.selected("Synthetic version A2")).toBe(true);
   expect(ui.lastBounds()).toEqual([[-0.02, -0.02], [0.02, 0.02]]);
 });
+
+it("source loading after the initial map load cannot postpone raster or publication cleanup", async () => {
+  await ui.loadMap();
+  await ui.click("Synthetic record A");
+  await ui.raster();
+  expect(ui.sources()).toEqual(["pub-publication-A1", "raster-overlay"]);
+  ui.busyAfterSourceChange();
+  await ui.click("Synthetic version A2");
+  expect(ui.sources()).toEqual(["pub-publication-A2"]);
+  await ui.click("Synthetic record E");
+  expect(ui.sources()).toEqual([]);
+});

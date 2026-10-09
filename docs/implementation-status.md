@@ -24,6 +24,8 @@ run in this repo (WSL: `.venv/bin/python3.14 -m pytest`, docker infra via
 - Record, version-detail, manifest and extent responses can update only their
   current navigation. Historical versions and deliberate comparisons within a
   record remain selectable; point queries keep their own coordinate ownership.
+- Map layer updates distinguish initial readiness from later tile loading, so
+  changing versions removes an old raster even while new tiles are pending.
 - Synthetic web component and production-browser checks cover interrupted and
   repeated selection without contacting data providers or using real datasets.
 

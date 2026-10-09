@@ -32,6 +32,7 @@ vi.mock("maplibre-gl", () => ({
         await this.listeners.click({ lngLat: { lng: lon, lat } });
       }
       addControl() {}
+      off() {}
       remove() {
         this.removed = true;
       }

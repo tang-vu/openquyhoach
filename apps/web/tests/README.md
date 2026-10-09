@@ -19,7 +19,8 @@ Navigation tests also cover record/version response ownership, empty and failed
 records, version details and manifests, repeated A→B→A selections, late
 publication catalogs, map framing, and old-record comparison callbacks. They
 preserve deliberately selected same-record comparisons and independent point
-queries. All navigation fixtures and MapLibre sources are synthetic.
+queries. A post-load source-busy regression ensures tile loading cannot postpone
+raster or publication cleanup. All fixtures and MapLibre sources are synthetic.
 
 For a production-browser check (Python 3 and Chromium are required):
 
