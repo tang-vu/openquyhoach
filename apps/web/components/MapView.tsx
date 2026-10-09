@@ -184,7 +184,7 @@ export default function MapView({
 
   return (
     <div className="mapwrap">
-      <div ref={ref} />
+      <div ref={ref} className="map-container" />
       <div className="click-hint">
         Click the map to query planned land use at a point — every result
         carries its provenance chain.

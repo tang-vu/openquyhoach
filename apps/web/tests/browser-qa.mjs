@@ -13,6 +13,7 @@ const server = spawn(
   { stdio: "ignore" },
 );
 let browser;
+let page;
 try {
   for (let attempt = 0; attempt < 100; attempt++) {
     try {
@@ -23,7 +24,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({
+  page = await browser.newPage({
     viewport: { width: 1280, height: 900 },
   });
   const errors = [];
@@ -41,7 +42,10 @@ try {
     if (url.origin === "http://localhost:8000") {
       requestLedger.push({ kind: "synthetic-api", path: url.pathname });
       if (["/v1/planning-records", "/v1/publications"].includes(url.pathname))
-        return route.fulfill({ json: { items: [] } });
+        return route.fulfill({
+          headers: { "access-control-allow-origin": base },
+          json: { items: [] },
+        });
       if (url.pathname === "/v1/features/query") {
         calls.push(url.href);
         const response = responses.shift();
@@ -49,7 +53,10 @@ try {
           response,
           "Point query must have an explicit synthetic response",
         );
-        return route.fulfill(await response);
+        return route.fulfill({
+          headers: { "access-control-allow-origin": base },
+          ...(await response),
+        });
       }
     }
     blocked.push(url.href);
@@ -79,6 +86,21 @@ try {
 
   await page.goto(base);
   await page.locator(".maplibregl-canvas").waitFor();
+  const hint = page.locator(".click-hint");
+  assert.ok(await hint.isVisible());
+  const hintBox = await hint.boundingBox();
+  const mapBox = await page.locator(".maplibregl-canvas").boundingBox();
+  assert.ok(
+    hintBox.height < mapBox.height / 2,
+    "The hint must not cover the map",
+  );
+  assert.equal(
+    await hint.evaluate((element) => getComputedStyle(element).pointerEvents),
+    "none",
+  );
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await page.getByRole("button", { name: "Zoom out", exact: true }).click();
+  await capture("initial-map");
   const first = hold();
   await click();
   await page
@@ -196,6 +218,16 @@ try {
   console.log(
     "Browser QA passed: seven synthetic scenarios; zero external requests; zero page errors",
   );
+} catch (error) {
+  await page?.screenshot({
+    path: join(evidence, "failed-state.png"),
+    fullPage: true,
+  });
+  await writeFile(
+    join(evidence, "failure.json"),
+    JSON.stringify({ message: error.message }, null, 2),
+  );
+  throw error;
 } finally {
   await browser?.close();
   server.kill();
