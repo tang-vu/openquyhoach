@@ -24,6 +24,7 @@ export async function invalidSnapshotMetadata(harness) {
   const invalidVersions = [
     { ...snapshotVersion(), id: "B1" },
     { ...snapshotVersion(), planning_record_id: "B" },
+    { ...snapshotVersion(), record: { id: "B" } },
     { ...snapshotVersion(), documents: null },
     { ...snapshotVersion(), datasets: null },
     { ...snapshotVersion(), publications: null },

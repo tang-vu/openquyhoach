@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { until } from "./browser-harness.mjs";
 import { detailPath, navigationUI, recordPath } from "./browser-navigation-support.mjs";
 import { publicationManifestPath, snapshotManifest, snapshotRecord, snapshotVersion } from "./browser-snapshot-fixtures.mjs";
@@ -41,9 +40,8 @@ export function snapshotUI(harness) {
       assert.equal(await download.failure(), null);
       assert.match(download.url(), /^blob:/, "Snapshot must be a local Blob download");
       assert.match(download.suggestedFilename(), /\.json$/);
-      const path = await download.path();
-      assert.ok(path, "A completed browser download must have a readable file");
-      return JSON.parse(await readFile(path, "utf8"));
+      const bytes = await harness.recordDownload(download);
+      return JSON.parse(bytes.toString("utf8"));
     },
     assertNoDownloads() { assert.equal(downloads.length, 0, "Preparation must never download automatically"); },
   };

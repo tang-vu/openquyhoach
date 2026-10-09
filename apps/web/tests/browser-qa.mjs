@@ -23,7 +23,7 @@ const report = {
   pointQueryChecks: ["loading", "failed lookup", "successful empty", "successful hit with badges",
     "late failure ignored", "malformed payload", "mobile error state"],
   mapEvidence: "Real MapLibre canvas, center-point query coordinates and fresh zoom tile requests; no private map state or product instrumentation",
-  pageErrors: [], routeErrors: [], blocked: [], requestLedger: [], snapshots: [], completions: 0,
+  pageErrors: [], routeErrors: [], blocked: [], requestLedger: [], snapshots: [], downloads: [], completions: 0,
 };
 const scenarios = [
   ["point-query", runPointQueries, false],

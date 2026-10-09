@@ -33,6 +33,7 @@ export function assertRecordDetail(value: unknown, recordId: string): asserts va
 
 export function assertVersionMetadata(value: unknown, recordId: string, versionId: string): asserts value is VersionMetadata {
   if (!object(value) || value.id !== versionId || !version(value, recordId) ||
+    (value.record !== undefined && (!object(value.record) || value.record.id !== recordId)) ||
     !entries(value.datasets, entry => strings(entry, ["dataset_group", "dataset_type", "derivation_level", "review_status", "quality_state"]) &&
       nullableText(entry.name) && typeof entry.published === "boolean" &&
       (entry.planning_version_id === undefined || entry.planning_version_id === versionId)) ||

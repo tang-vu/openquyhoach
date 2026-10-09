@@ -99,6 +99,7 @@ export async function invalidManifestSnapshot(harness) {
   await ui.open(record, version);
   const cases = [
     { ...snapshotManifest(), planning_record: "B", planning_version: "B1" },
+    { ...snapshotManifest(), planning_record: "A", planning_version: "A2" },
     { ...snapshotManifest(), schema_version: "unknown-schema" },
     { ...snapshotManifest(), artifacts: null },
     { ...snapshotManifest(), planning_version: undefined },

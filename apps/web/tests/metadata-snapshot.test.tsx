@@ -12,8 +12,12 @@ const manifest = (record = "A", version = "A1") => ({
 describe("metadata captured from the selected API responses", () => {
   it("keeps every returned entry and metadata value, including unknowns and caveats", async () => {
     const record = { ...recordDetail("A"), title: "Fresh record metadata", data_class: "mixed" as const };
-    const version = { ...detail("A1"), metadata_origin: "derived_machine",
+    const version = { ...detail("A1"), metadata_origin: "derived_machine", record: { ...record, versions: undefined },
+      effective_from: null, effective_to: null, supersedes_version_id: null,
       field_origins: { approval_date: "unknown" }, rights: { redistribution_status: "unknown" } };
+    Object.assign(version.datasets[0], { planning_version_id: "A1", source_artifact_id: "synthetic-artifact",
+      original_format: "synthetic", original_crs: null });
+    Object.assign(version.documents[0], { field_origins: { title: "derived_machine" } });
     version.datasets.push({ ...version.datasets[0], id: "unpublished", published: false });
     version.documents.push({ ...version.documents[0], id: "second-document" });
     version.publications.push({ ...version.publications[0], id: "second-publication" });
@@ -21,7 +25,7 @@ describe("metadata captured from the selected API responses", () => {
     const load = vi.fn(async (_publicationId: string) => value);
     const snapshot = await prepareMetadataSnapshot("A", "A1", record, version, load, "2026-10-09T00:00:00.000Z");
     expect(snapshot.record).toEqual(record);
-    expect(snapshot.version).toEqual(version);
+    expect(snapshot.version).toEqual(JSON.parse(JSON.stringify(version)));
     expect(snapshot.selection).toEqual({ record_id: "A", version_id: "A1" });
     expect(snapshot.captured_at).toBe("2026-10-09T00:00:00.000Z");
     expect(snapshot.availability.publication_manifests).toBe("available");
@@ -73,6 +77,8 @@ describe("metadata captured from the selected API responses", () => {
   it.each([
     [null, detail("A1")], [recordDetail("B"), detail("A1")],
     [recordDetail("A"), detail("B1")],
+    [recordDetail("A"), { ...detail("A1"), record: { id: "B" } }],
+    [recordDetail("A"), { ...detail("A1"), record: null }],
     [recordDetail("A"), { ...detail("A1"), documents: null }],
     [recordDetail("A"), { ...detail("A1"), datasets: [null] }],
     [recordDetail("A"), { ...detail("A1"), publications: [{}] }],
