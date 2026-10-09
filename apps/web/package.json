@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start -p 3100",
     "serve": "next build && python3 -m http.server 3100 -d out",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:browser": "node tests/browser-qa.mjs"
   },
   "dependencies": {
     "maplibre-gl": "^5.6.0",
@@ -19,6 +21,9 @@
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "typescript": "^5.7.2"
+    "jsdom": "26.1.0",
+    "playwright": "1.64.0",
+    "typescript": "^5.7.2",
+    "vitest": "4.1.11"
   }
 }

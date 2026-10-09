@@ -1,0 +1,38 @@
+name: Web
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            apps/web
+          sparse-checkout-cone-mode: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --global pnpm@11.24.0
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter @openquyhoach/web test
+      - run: pnpm --filter @openquyhoach/web typecheck
+      - run: pnpm --filter @openquyhoach/web build
+      - run: pnpm --filter @openquyhoach/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @openquyhoach/web test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synthetic-browser-evidence
+          path: apps/web/.browser-evidence/
+          include-hidden-files: true

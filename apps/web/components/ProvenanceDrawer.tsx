@@ -4,12 +4,11 @@ import type { FeatureHit } from "@/lib/api";
 import type { MapSelection } from "./MapView";
 
 function LevelBadge({ level, review }: { level: string; review: string }) {
-  const cls =
-    level.startsWith("official")
-      ? "official"
-      : review === "approved"
-        ? "derived"
-        : "unreviewed";
+  const cls = level.startsWith("official")
+    ? "official"
+    : review === "approved"
+      ? "derived"
+      : "unreviewed";
   return (
     <>
       <span className={`badge ${cls}`}>{level}</span>{" "}
@@ -69,9 +68,26 @@ export default function ProvenanceDrawer({
 }) {
   if (!selection)
     return <div className="muted">Click the map to inspect a point.</div>;
+  if (selection.status !== "success")
+    return (
+      <div>
+        <div className="mono muted" style={{ marginBottom: 8 }}>
+          {selection.lat.toFixed(5)}, {selection.lon.toFixed(5)}
+        </div>
+        {selection.status === "loading" ? (
+          <div className="muted" role="status">
+            Looking up this point…
+          </div>
+        ) : (
+          <div className="error" role="alert">
+            Lookup failed. Click the map to try again.
+          </div>
+        )}
+      </div>
+    );
   return (
     <div>
-      <div className="mono muted" style={{ marginBottom: 8 }}>
+      <div className="mono muted" style={{ marginBottom: 8 }} role="status">
         {selection.lat.toFixed(5)}, {selection.lon.toFixed(5)} —{" "}
         {selection.hits.length} feature(s)
       </div>
