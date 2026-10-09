@@ -3,14 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type DatasetInfo, type DocumentInfo } from "@/lib/api";
 import { OriginBadge } from "@/components/badges";
+import MetadataSnapshotDownload from "@/components/MetadataSnapshotDownload";
+import { assertVersionMetadata, type RecordDetail } from "@/lib/metadata-snapshot-validation";
 
 type Detail = Awaited<ReturnType<typeof api.versionDetail>>;
 
 export default function VersionDetail({
+  record,
   versionId,
   onRasterToggle,
   rasterOn,
 }: {
+  record: RecordDetail;
   versionId: string;
   rasterOn: string | null;
   onRasterToggle: (datasetId: string | null) => void;
@@ -31,16 +35,19 @@ export default function VersionDetail({
     api
       .versionDetail(versionId)
       .then((value) => {
-        if (generation.current === request) setDetail({ versionId, value });
+        if (generation.current === request) {
+          assertVersionMetadata(value, record.id, versionId);
+          setDetail({ versionId, value });
+        }
       })
       .catch((e) => {
         if (generation.current === request) setErr(String(e));
       });
     return () => { ++generation.current; ++manifestRequest.current; };
-  }, [versionId]);
+  }, [versionId, record.id]);
 
   const d = detail?.versionId === versionId ? detail.value : null;
-  if (err) return <div className="error">{err}</div>;
+  if (err) return <div className="error" role="alert">{err}</div>;
   if (!d) return <div className="muted">loading…</div>;
 
   const rasters = d.datasets.filter(
@@ -50,6 +57,7 @@ export default function VersionDetail({
 
   return (
     <div>
+      <MetadataSnapshotDownload record={record} version={d} />
       <h2>Datasets</h2>
       {datasets.map((x) => (
         <DatasetRow key={x.id} d={x} />

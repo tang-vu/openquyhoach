@@ -1,5 +1,28 @@
 # Implementation Status — V1 + real-source infrastructure
 
+## Local metadata capture in the web UI
+
+- The selected record/version offers **Prepare metadata snapshot (JSON)**,
+  followed by an explicit local download. It includes the owned record and
+  version API metadata, every returned dataset/document/publication entry,
+  and available publication manifest JSON values without rewriting their
+  origins, rights, disclaimers or checksums.
+- This is metadata captured from separate API responses, not an atomic server
+  snapshot, source-freshness check, verified evidence, or complete provenance
+  graph. `captured_at` records the start of local preparation. Publication
+  `checksum_sha256` retains its PMTiles meaning; it is not a snapshot checksum.
+- Invalid record/version metadata or identity blocks preparation. Invalid,
+  foreign, unsupported or failed manifests remain explicit unavailable entries.
+  Missing publications or unavailable manifests require the separate
+  **Download incomplete snapshot** choice. Missing values are not inferred.
+- Record/version navigation, tab dismissal and cancellation invalidate pending
+  and prepared captures. No source files, provider URLs, tiles, or unrelated
+  point-query/location state are fetched or added by the capture action.
+- Synthetic component and production-browser tests cover downloaded JSON
+  contents, incomplete/error states, repeated actions and interrupted flows.
+  No API endpoints, backend data, publication gates, admin or license behavior
+  changed for this workflow.
+
 State after the provenance-first real-data phase. Verification commands were
 run in this repo (WSL: `.venv/bin/python3.14 -m pytest`, docker infra via
 `wsl -u root docker`).

@@ -8,6 +8,9 @@ import { runPointQueries } from "./browser-point-query.mjs";
 import { emptyRecord, recordRecovery, recordReversal, recordRevisit } from "./browser-navigation-records.mjs";
 import { manifestOwnership, versionOwnership, versionRecovery } from "./browser-navigation-versions.mjs";
 import { oldRecordComparison, sameRecordComparison } from "./browser-navigation-comparison.mjs";
+import { completeSnapshot, incompleteSnapshotRecovery, invalidManifestSnapshot, unpublishedSnapshot } from "./browser-snapshot-downloads.mjs";
+import { cancelledSnapshot, recordSnapshotRevisit, tabSnapshotOwnership, versionSnapshotOwnership } from "./browser-snapshot-races.mjs";
+import { invalidSnapshotMetadata } from "./browser-snapshot-validation.mjs";
 
 const base = "http://127.0.0.1:3917";
 const evidence = join(process.cwd(), ".browser-evidence");
@@ -20,7 +23,7 @@ const report = {
   pointQueryChecks: ["loading", "failed lookup", "successful empty", "successful hit with badges",
     "late failure ignored", "malformed payload", "mobile error state"],
   mapEvidence: "Real MapLibre canvas, center-point query coordinates and fresh zoom tile requests; no private map state or product instrumentation",
-  pageErrors: [], routeErrors: [], blocked: [], requestLedger: [], snapshots: [], completions: 0,
+  pageErrors: [], routeErrors: [], blocked: [], requestLedger: [], snapshots: [], downloads: [], completions: 0,
 };
 const scenarios = [
   ["point-query", runPointQueries, false],
@@ -33,6 +36,15 @@ const scenarios = [
   ["version-and-extent-error-recovery", versionRecovery, true],
   ["late-old-record-comparison", oldRecordComparison, true],
   ["same-record-comparison-preservation", sameRecordComparison, true],
+  ["metadata-snapshot-complete-download", completeSnapshot, true],
+  ["metadata-snapshot-incomplete-recovery", incompleteSnapshotRecovery, true],
+  ["metadata-snapshot-no-publications", unpublishedSnapshot, true],
+  ["metadata-snapshot-invalid-manifests", invalidManifestSnapshot, true],
+  ["metadata-snapshot-cancel-and-retry", cancelledSnapshot, true],
+  ["metadata-snapshot-record-revisit", recordSnapshotRevisit, true],
+  ["metadata-snapshot-version-ownership", versionSnapshotOwnership, true],
+  ["metadata-snapshot-tab-unmount", tabSnapshotOwnership, true],
+  ["metadata-snapshot-invalid-owned-metadata", invalidSnapshotMetadata, true],
 ];
 const server = spawn("python3", ["-m", "http.server", "3917", "--bind", "127.0.0.1", "--directory", "out"], { stdio: "ignore" });
 let browser;
@@ -45,7 +57,12 @@ try {
     if (attempt === 99) throw new Error("Static build server did not start");
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({
+    headless: true,
+    ...(process.env.OQH_BROWSER_EXECUTABLE ? { executablePath: process.env.OQH_BROWSER_EXECUTABLE } : {}),
+  });
+  report.browserVersion = browser.version();
+  report.browserExecutable = process.env.OQH_BROWSER_EXECUTABLE ?? "playwright-managed";
   for (const [name, run, navigation] of scenarios) {
     const harness = await createHarness(browser, { base, evidence, report, name, navigation });
     page = harness.page;
@@ -64,7 +81,7 @@ try {
   report.externalRequests = report.blocked.length;
   delete report.currentScenario;
   await writeFile(join(evidence, "browser-results.json"), JSON.stringify(report, null, 2));
-  console.log("Browser QA passed: seven point-query checks and nine navigation scenarios; zero external requests; zero page errors");
+  console.log("Browser QA passed: seven point-query checks, nine navigation scenarios and nine metadata snapshot scenarios; zero external requests; zero page errors");
 } catch (error) {
   await page?.screenshot({ path: join(evidence, "failed-state.png"), fullPage: true }).catch(() => {});
   await writeFile(join(evidence, "failure.json"), JSON.stringify({ ...report, message: error.message }, null, 2));

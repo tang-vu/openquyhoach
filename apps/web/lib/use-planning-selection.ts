@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type PlanningVersion, type Publication } from "./api";
+import { api, type Publication } from "./api";
+import { assertRecordDetail, type RecordDetail } from "./metadata-snapshot-validation";
 
 type Selection = { id: string; generation: number };
 type RecordSelection = Selection & { frameRequest: number };
 type VersionSelection = Selection & { frameRequest: number | null };
-type RecordData = { owner: RecordSelection; versions: PlanningVersion[] };
+type RecordData = { owner: RecordSelection; value: RecordDetail };
 
 /** Record navigation owns its versions, map targets and async completions. */
 export function usePlanningSelection(publications: Publication[]) {
@@ -57,7 +58,8 @@ export function usePlanningSelection(publications: Publication[]) {
     let active = true;
     api.recordDetail(record.id).then((detail) => {
       if (!active || recordRef.current !== record) return;
-      setLoaded({ owner: record, versions: detail.versions });
+      assertRecordDetail(detail, record.id);
+      setLoaded({ owner: record, value: detail });
       const first = detail.versions[0];
       // A later explicit focus also supersedes extent work not started yet.
       if (first) beginVersion(first.id, record, frameRequest.current === record.frameRequest);
@@ -81,10 +83,11 @@ export function usePlanningSelection(publications: Publication[]) {
     return () => { active = false; };
   }, [version]);
 
-  const versions = loaded?.owner === record ? loaded?.versions ?? [] : [];
+  const recordDetail = loaded?.owner === record ? loaded?.value ?? null : null;
+  const versions = recordDetail?.versions ?? [];
   const selectVersion = useCallback((id: string) => {
     if (record && loaded?.owner === record &&
-      loaded.versions.some((item) => item.id === id)) beginVersion(id, record);
+      loaded.value.versions.some((item) => item.id === id)) beginVersion(id, record);
   }, [record, loaded, beginVersion]);
 
   // A comparison belongs to its record, not to the currently viewed version.
@@ -108,6 +111,7 @@ export function usePlanningSelection(publications: Publication[]) {
     recordKey: record?.generation,
     versionId: version?.id ?? null,
     versionKey: version?.generation,
+    recordDetail,
     versions,
     loading: !!record && loaded?.owner !== record && !error,
     error,

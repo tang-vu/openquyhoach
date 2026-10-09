@@ -216,7 +216,7 @@ export const api = {
     get<{ bbox: number[] }>(`/v1/versions/${id}/extent`),
   publications: () => get<{ items: Publication[] }>("/v1/publications"),
   manifest: (pubId: string) =>
-    get<Record<string, unknown>>(`/v1/publications/${pubId}/manifest.json`),
+    get<Record<string, unknown>>(`/v1/publications/${encodeURIComponent(pubId)}/manifest.json`),
   compare: (fromLayer: string, toLayer: string) =>
     get<Changeset>("/v1/compare", { from_layer: fromLayer, to_layer: toLayer }),
   dataset: (id: string) => get<DatasetInfo>(`/v1/datasets/${id}`),

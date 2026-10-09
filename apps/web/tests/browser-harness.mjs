@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fixtureResponse } from "./browser-fixtures.mjs";
 
@@ -18,6 +20,7 @@ export async function createHarness(browser, options) {
   const queues = new Map();
   const gates = [];
   const requests = [];
+  let downloadSequence = 0;
   let phase = "initial";
   const enqueue = (path, response) => {
     if (!queues.has(path)) queues.set(path, []);
@@ -70,10 +73,22 @@ export async function createHarness(browser, options) {
       await page.locator(".maplibregl-canvas").waitFor();
       await page.waitForLoadState("networkidle");
     },
-    async capture(label) {
-      await page.screenshot({ path: join(evidence, `${name}-${label}.png`), fullPage: true });
-      report.snapshots.push({ scenario: name, phase: label,
+    async capture(label, { fullPage = true } = {}) {
+      await page.screenshot({ path: join(evidence, `${name}-${label}.png`), fullPage });
+      report.snapshots.push({ scenario: name, phase: label, viewport: page.viewportSize(), fullPage,
         sidebar: await page.locator(".sidebar").innerText() });
+    },
+    async recordDownload(download) {
+      const path = await download.path();
+      assert.ok(path, "A completed browser download must have a readable file");
+      const bytes = await readFile(path);
+      const file = `${name}-download-${String(++downloadSequence).padStart(2, "0")}.json`;
+      await writeFile(join(evidence, file), bytes);
+      report.downloads.push({
+        scenario: name, phase, file, viewport: page.viewportSize(), suggestedFilename: download.suggestedFilename(),
+        bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"),
+      });
+      return bytes;
     },
     async finish() {
       assert.ok(gates.every((gate) => gate.seen && gate.released), "All held requests must be exercised and released");
