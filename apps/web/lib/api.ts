@@ -1,6 +1,8 @@
 /** Typed client for the OpenQuyHoach API. Server-side fetch uses
  * OQH_API_INTERNAL_URL (docker) when set; the browser uses the public URL. */
 
+import { isPointQueryResponse } from "./point-query-response";
+
 export const API =
   process.env.NEXT_PUBLIC_OQH_API_URL ?? "http://localhost:8000";
 
@@ -198,12 +200,16 @@ async function post<T>(path: string, body: unknown, adminKey?: string): Promise<
 export const api = {
   search: (q: string) =>
     get<{ results: SearchHit[] }>("/v1/search", { q }),
-  pointQuery: (lon: number, lat: number, bufferM = 60) =>
-    get<{ hits: FeatureHit[] }>("/v1/features/query", {
+  pointQuery: async (lon: number, lat: number, bufferM = 60) => {
+    const result = await get<unknown>("/v1/features/query", {
       lon: String(lon),
       lat: String(lat),
       buffer_m: String(bufferM),
-    }),
+    });
+    if (!isPointQueryResponse(result))
+      throw new Error("Invalid point-query response");
+    return result;
+  },
   records: () => get<{ items: PlanningRecord[] }>("/v1/planning-records"),
   version: (id: string) => get<PlanningVersion>(`/v1/planning-versions/${id}`),
   versionExtent: (id: string) =>

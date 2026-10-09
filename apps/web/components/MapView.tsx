@@ -5,11 +5,12 @@ import maplibregl, { Map as MLMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { api, type FeatureHit } from "@/lib/api";
 
-export interface MapSelection {
+export type MapSelection = {
   lon: number;
   lat: number;
-  hits: FeatureHit[];
-}
+} & (
+  { status: "loading" | "error" } | { status: "success"; hits: FeatureHit[] }
+);
 
 const LAYER_COLORS: Record<string, string> = {
   land_use: "#3fa7ff",
@@ -19,7 +20,11 @@ const LAYER_COLORS: Record<string, string> = {
 
 /** Vector tiles for one published version; the MVT carries `layer` attr
  * per feature so a single source can expose multiple paint layers. */
-function addPublicationSource(map: MLMap, pubId: string, variant: "main" | "cmp") {
+function addPublicationSource(
+  map: MLMap,
+  pubId: string,
+  variant: "main" | "cmp",
+) {
   const srcId = `pub-${pubId}`;
   if (map.getSource(srcId)) return;
   map.addSource(srcId, {
@@ -56,7 +61,7 @@ function addPublicationSource(map: MLMap, pubId: string, variant: "main" | "cmp"
 /** Remove all pub-* sources and their layers (keeps the map in sync with
  * the selected version). */
 function clearPublicationSources(map: MLMap) {
-  for (const lyr of [...map.getStyle().layers ?? []]) {
+  for (const lyr of [...(map.getStyle().layers ?? [])]) {
     if (lyr.id.startsWith("pub-")) map.removeLayer(lyr.id);
   }
   for (const [id] of Object.entries(map.getStyle().sources ?? {})) {
@@ -102,6 +107,8 @@ export default function MapView({
 
   useEffect(() => {
     if (!ref.current || mapRef.current) return;
+    let active = true;
+    let latestRequest = 0;
     const map = new maplibregl.Map({
       container: ref.current,
       style: {
@@ -121,16 +128,22 @@ export default function MapView({
     });
     map.addControl(new maplibregl.NavigationControl(), "top-right");
     map.on("click", async (e) => {
+      if (!active) return;
       const { lng, lat } = e.lngLat;
+      const request = ++latestRequest;
+      onSelect({ lon: lng, lat, status: "loading" });
       try {
         const res = await api.pointQuery(lng, lat);
-        onSelect({ lon: lng, lat, hits: res.hits });
+        if (active && request === latestRequest)
+          onSelect({ lon: lng, lat, status: "success", hits: res.hits });
       } catch {
-        onSelect({ lon: lng, lat, hits: [] });
+        if (active && request === latestRequest)
+          onSelect({ lon: lng, lat, status: "error" });
       }
     });
     mapRef.current = map;
     return () => {
+      active = false;
       map.remove();
       mapRef.current = null;
     };
@@ -171,7 +184,7 @@ export default function MapView({
 
   return (
     <div className="mapwrap">
-      <div ref={ref} />
+      <div ref={ref} className="map-container" />
       <div className="click-hint">
         Click the map to query planned land use at a point — every result
         carries its provenance chain.
