@@ -114,9 +114,10 @@ export default function Page() {
                     </div>
                   </div>
                 ))}
-                {versionId && (
+                {versionId && selection.recordDetail && (
                   <VersionDetail
                     key={selection.versionKey}
+                    record={selection.recordDetail}
                     versionId={versionId}
                     rasterOn={selection.rasterId}
                     onRasterToggle={selection.onRasterToggle}
