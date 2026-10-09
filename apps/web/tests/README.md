@@ -52,7 +52,10 @@ effect, before passive cleanup, to ensure an old capture is never offered.
 Nine additional browser scenarios exercise actual local JSON downloads and
 their contents, incomplete/no-manifest choices, malformed or foreign metadata,
 retries, duplicate activation, cancellation, record/version navigation and tab
-unmounts. The snapshot fixtures use only synthetic metadata and the existing
+unmounts. Complete and incomplete choices are exercised at both wide and
+390px widths, including ordinary sidebar scrolling, visible/hit-testable
+controls, Tab/Enter activation, screenshots and retained download bytes.
+The snapshot fixtures use only synthetic metadata and the existing
 network interceptor. An existing Chromium binary can be selected with
 `OQH_BROWSER_EXECUTABLE=/absolute/path/to/chromium`; otherwise Playwright uses
 its normal installed Chromium.

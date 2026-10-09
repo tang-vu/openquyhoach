@@ -33,9 +33,12 @@ export function snapshotUI(harness) {
       assert.equal(await button(COMPLETE).count(), 0);
       assert.equal(await button(INCOMPLETE).count(), 0);
     },
-    async download(complete = true) {
+    async download(complete = true, { keyboard = false } = {}) {
+      const choice = button(complete ? COMPLETE : INCOMPLETE);
+      if (keyboard) assert.ok(await choice.evaluate((element) => document.activeElement === element),
+        "Enter must activate the focused snapshot choice");
       const [download] = await Promise.all([
-        page.waitForEvent("download"), button(complete ? COMPLETE : INCOMPLETE).click(),
+        page.waitForEvent("download"), keyboard ? page.keyboard.press("Enter") : choice.click(),
       ]);
       assert.equal(await download.failure(), null);
       assert.match(download.url(), /^blob:/, "Snapshot must be a local Blob download");

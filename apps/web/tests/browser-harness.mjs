@@ -73,9 +73,9 @@ export async function createHarness(browser, options) {
       await page.locator(".maplibregl-canvas").waitFor();
       await page.waitForLoadState("networkidle");
     },
-    async capture(label) {
-      await page.screenshot({ path: join(evidence, `${name}-${label}.png`), fullPage: true });
-      report.snapshots.push({ scenario: name, phase: label,
+    async capture(label, { fullPage = true } = {}) {
+      await page.screenshot({ path: join(evidence, `${name}-${label}.png`), fullPage });
+      report.snapshots.push({ scenario: name, phase: label, viewport: page.viewportSize(), fullPage,
         sidebar: await page.locator(".sidebar").innerText() });
     },
     async recordDownload(download) {
@@ -85,7 +85,7 @@ export async function createHarness(browser, options) {
       const file = `${name}-download-${String(++downloadSequence).padStart(2, "0")}.json`;
       await writeFile(join(evidence, file), bytes);
       report.downloads.push({
-        scenario: name, phase, file, suggestedFilename: download.suggestedFilename(),
+        scenario: name, phase, file, viewport: page.viewportSize(), suggestedFilename: download.suggestedFilename(),
         bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"),
       });
       return bytes;

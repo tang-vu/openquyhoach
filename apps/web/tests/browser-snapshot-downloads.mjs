@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { failure } from "./browser-navigation-support.mjs";
 import { publicationManifestPath, snapshotManifest, snapshotRecord, snapshotVersion } from "./browser-snapshot-fixtures.mjs";
+import { revealSnapshotChoice, tabToSnapshotChoice } from "./browser-snapshot-responsive.mjs";
 import {
   COMPLETE, INCOMPLETE, START, assertMetadataRequestsOnly, assertSnapshot,
   heldManifests, replyManifests, snapshotUI,
@@ -29,6 +30,7 @@ export async function completeSnapshot(harness) {
   ui.assertNoDownloads();
   assert.equal(harness.requests.slice(start).filter((entry) => entry.path.endsWith("/manifest.json")).length, 2,
     "Repeated preparation must not request a second set of manifests");
+  await revealSnapshotChoice(harness, ui);
   await harness.capture("ready-with-explicit-download");
   assertSnapshot(await ui.download(), {
     record, version, since, availability: "available",
@@ -37,6 +39,19 @@ export async function completeSnapshot(harness) {
     })),
   });
   assert.equal(await ui.button(COMPLETE).isDisabled(), true);
+
+  await harness.page.setViewportSize({ width: 390, height: 844 });
+  harness.phase("narrow-complete-keyboard-download");
+  const narrowManifests = replyManifests(harness, version, "narrow-complete");
+  const narrowSince = Date.now();
+  await ui.prepare(); await ui.ready();
+  assert.equal(ui.downloads.length, 1, "Narrow preparation must still require explicit activation");
+  await tabToSnapshotChoice(harness, ui);
+  await harness.capture("narrow-complete-keyboard-choice", { fullPage: false });
+  assertSnapshot(await ui.download(true, { keyboard: true }), {
+    record, version, since: narrowSince, availability: "available", manifests: narrowManifests,
+  });
+  assert.equal(ui.downloads.length, 2);
   assertMetadataRequestsOnly(harness, start);
 }
 
@@ -53,6 +68,7 @@ export async function incompleteSnapshotRecovery(harness) {
   const content = await ui.text();
   assert.ok(content.includes(version.publications[1].id), "Failed publication must be identified");
   assert.ok(content.includes("SYNTHETIC-MANIFEST-UNAVAILABLE"), "Manifest failure must be explained");
+  await revealSnapshotChoice(harness, ui, false);
   await harness.capture("explicit-incomplete-choice");
   const result = await ui.download(false);
   assert.equal(result.manifests[1].status, "unavailable");
@@ -75,6 +91,21 @@ export async function incompleteSnapshotRecovery(harness) {
   assert.equal(ui.downloads.length, 2);
   assertMetadataRequestsOnly(harness, start);
   await harness.capture("recovered-complete-snapshot");
+
+  await harness.page.setViewportSize({ width: 390, height: 844 });
+  harness.phase("narrow-incomplete-keyboard-download");
+  harness.reply(publicationManifestPath(version.publications[0].id), { json: good });
+  harness.reply(publicationManifestPath(version.publications[1].id), failure("SYNTHETIC-MANIFEST-UNAVAILABLE"));
+  const narrowSince = Date.now();
+  await ui.prepare(); await ui.ready(false);
+  assert.equal(ui.downloads.length, 2, "Narrow incomplete preparation must wait for explicit activation");
+  await tabToSnapshotChoice(harness, ui, false);
+  await harness.capture("narrow-incomplete-keyboard-choice", { fullPage: false });
+  assertSnapshot(await ui.download(false, { keyboard: true }), {
+    record, version, since: narrowSince, availability: "incomplete", manifests: result.manifests,
+  });
+  assert.equal(ui.downloads.length, 3);
+  assertMetadataRequestsOnly(harness, start);
 }
 
 export async function unpublishedSnapshot(harness) {
